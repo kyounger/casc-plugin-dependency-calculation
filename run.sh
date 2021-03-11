@@ -6,8 +6,10 @@ CB_DOCKER_IMAGE="cloudbees/cloudbees-core-mm"
 # CB_UPDATE_CENTER="https://jenkins-updates.cloudbees.com/update-center/envelope-core-oc"
 # CB_DOCKER_IMAGE="cloudbees/cloudbees-cloud-core-oc"
 
+PLUGIN_YAML_PATH=${1:="plugin.yaml"}
+
 #reformat plugins list to be compatible with pimt
-yq e '.plugins[] | [{"artifactId": .[]}] | {"plugins": .}' plugins.yaml > pimt-plugins.yaml
+yq e '.plugins[] | [{"artifactId": .[]}] | {"plugins": .}' $PLUGIN_YAML_PATH > pimt-plugins.yaml
 
 #use docker to extract war file from cb image and cache it
 if [[ -f jenkins.war ]]; then
@@ -23,7 +25,7 @@ else
   JAR_URL=$(curl -sL \
     -H "Accept: application/vnd.github.v3+json" \
     https://api.github.com/repos/jenkinsci/plugin-installation-manager-tool/releases/latest \
-    | jq -r '.assets[0].browser_download_url')
+    | yq e '.assets[0].browser_download_url' -)
 
   curl -sL $JAR_URL > jenkins-plugin-manager.jar 
 fi
