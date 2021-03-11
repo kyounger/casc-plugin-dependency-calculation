@@ -2,3 +2,4 @@ jenkins.war
 jenkins-plugin-manager.jar
 plugins.yaml
 pimt-plugins.yaml
+update-center.json
