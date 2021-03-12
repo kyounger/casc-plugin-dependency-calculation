@@ -20,5 +20,6 @@
 * Remove the stderr redirection if you need to see the caching notifications.
 
 ## TODO
-[ ] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
-[ ] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
+
+- [ ] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
+- [ ] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
