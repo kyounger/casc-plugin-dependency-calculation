@@ -12,12 +12,14 @@
 
 ## Notes
 
+* As of yet, this will not output or update your original `plugins.yaml` file to add the additional dependencies. See TODOs.
 * This process caches all resources that it fetches (list below). 
   * `jenkins.war` from the docker image
   * `jenkins-plugin-manager.jar` download from github releases
   * `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
 
 * Remove the stderr redirection if you need to see the caching notifications.
+
 
 ## TODO
 
