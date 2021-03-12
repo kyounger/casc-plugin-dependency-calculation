@@ -46,8 +46,11 @@ Multiple runs taking advantage of caching and generating multiple different `plu
 ## Advanced
 
 These two settings are adjustable by exporting them in the shell prior to running. This, for example, is running the process again the client master UC and docker image. *Note that caching does not handle changing this on subseqent runs!*
+
+```bash
 export CB_UPDATE_CENTER="https://jenkins-updates.cloudbees.com/update-center/envelope-core-cm"
 export CB_DOCKER_IMAGE="cloudbees/cloudbees-core-cm"
+```
 
 ## TODO
 
