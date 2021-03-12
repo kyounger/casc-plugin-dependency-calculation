@@ -4,22 +4,44 @@
 * yq (v4)
 * curl
 
-## How to use this
+## Usage
 
-1. Clone this repo. Open `runs.sh` and edit any of the initial values as needed.
-2. Run `./run.sh 2.263.4.2 /path/to/your/plugins.yaml 2>/dev/null` (defaults to a `plugin.yaml` file in the pwd)
-3. The stdout will be what you need to use for the `plugin-catalog.yaml` in the bundle.
+```
+Usage: run.sh -v <CI_VERSION> [-f <path/to/plugins.yaml>] [-h] [-x]
+
+    -h          display this help and exit
+    -f FILE     path to the plugins.yaml file
+    -v          The version of CloudBees CI (e.g. 2.263.4.2)
+    -x          Do NOT do an inplace update of plugins.yaml
+```
+
+## Examples
+
+A single run with the plugin.yaml file in the same directory as `run.sh`. This create `plugin-catalog.yaml` and updates `plugins.yaml`:
+
+`./run.sh -v 2.263.4.2`
+
+A single run with a specified path to plugin.yaml file, but using the `-x` option to turn off the "inplace update". This leave the `plugin.yaml` file alone and only output the `plugin-catalog.yaml` content to stdout.
+
+`./run.sh -v 2.263.4.2 -f /path/to/plugins.yaml -x`
+
+Multiple runs taking advantage of caching and generating multiple different `plugin-catalogs.yaml` and updating their corresponding `plugins.yaml`:
+
+``` bash
+./run.sh -v 2.263.1.2 -f /bundle1/plugins.yaml
+./run.sh -v 2.263.4.2 -f /bundle2/plugins.yaml
+./run.sh -v 2.263.4.2 -f /bundle3/plugins.yaml
+./run.sh -v 2.277.1.2 -f /bundle4/plugins.yaml
+```
 
 ## Notes
 
-* As of yet, this will not output or update your original `plugins.yaml` file to add the additional dependencies. See TODOs.
+* This will update your `plugin.yaml` file unless you specify the `-x` flag.
 
 * This process caches all resources that it fetches under a `.cache` directory in the pwd. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
   * `jenkins.war` from the docker image
   * `jenkins-plugin-manager.jar` download from github releases
   * `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
-
-* Remove the stderr redirection if you need to see the caching notifications.
 
 ## Advanced
 
@@ -29,7 +51,7 @@ export CB_DOCKER_IMAGE="cloudbees/cloudbees-core-cm"
 
 ## TODO
 
-- [ ] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
+- [x] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
+- [x] Put in some examples
 - [x] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
 - [ ] Put time into a PR for PIMT that allows it to have structured output to avoid the use of `sed` in processing its output.
-- [ ] Put in some examples
