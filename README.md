@@ -18,3 +18,7 @@
   * `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
 
 * Remove the stderr redirection if you need to see the caching notifications.
+
+## TODO
+[ ] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
+[ ] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
