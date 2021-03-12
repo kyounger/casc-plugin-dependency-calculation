@@ -1,12 +1,26 @@
+#!/usr/bin/env sh
+
 set -euo pipefail
 
-#adjustable vars
-CI_VERSION="2.263.4.2"
-CB_UPDATE_CENTER="https://jenkins-updates.cloudbees.com/update-center/envelope-core-mm"
-CB_DOCKER_IMAGE="cloudbees/cloudbees-core-mm"
+if [ -z "${1:-}" ]; then
+  echo "No CI_VERSION specified as first parameter" >&2
+  exit 1
+fi
+
+CI_VERSION=$1
+PLUGIN_YAML_PATH="plugins.yaml"
+
+if [ -z "${2:-}" ]; then
+  echo "No plugin.yaml path specified as second parameter. Defaulting to 'plugins.yaml'" >&2
+else
+  PLUGIN_YAML_PATH=$2
+fi
+
+#adjustable vars. Will inherit from shell, but default to what you see here.
+CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-mm"}
+CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-mm"}
 
 #calculated vars
-PLUGIN_YAML_PATH=${1:="plugin.yaml"}
 CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
 #cache some stuff locally
