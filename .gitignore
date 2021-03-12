@@ -1,4 +1,6 @@
+.cache
 jenkins.war
+cb-*.war
 jenkins-plugin-manager.jar
 plugins.yaml
 pimt-plugins.yaml
