@@ -13,8 +13,8 @@ CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 CACHE_BASE_DIR=$(pwd)/.cache
 mkdir -p $CACHE_BASE_DIR
 
-#reformat plugins list to be compatible with pimt
-yq e '.plugins[] | [{"artifactId": .[]}] | {"plugins": .}' $PLUGIN_YAML_PATH > pimt-plugins.yaml
+#create a space-delimited list of plugins from plugins.yaml to pass to PIMT
+LIST_OF_PLUGINS=$(yq e '.plugins[].id ' $PLUGIN_YAML_PATH | tr "\n" " ")
 
 #use docker to extract war file from cb image and cache it
 WAR_CACHE_DIR=$CACHE_BASE_DIR/war/$CI_VERSION
@@ -62,7 +62,7 @@ java -jar $PIMT_CACHE_DIR/jenkins-plugin-manager.jar \
   --list \
   --no-download \
   --jenkins-update-center "file://$UC_CACHE_DIR" \
-  --plugin-file pimt-plugins.yaml \
+  --plugins $LIST_OF_PLUGINS \
   | sed -n '/^Plugins\ that\ will\ be\ downloaded\:$/,/^Resulting\ plugin\ list\:$/p' \
   | sed '1d' | sed '$d' | sed '$d' \
   | sed 's/ /: {version: "/g' \
