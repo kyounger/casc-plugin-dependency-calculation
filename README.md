@@ -23,3 +23,4 @@
 
 - [ ] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
 - [ ] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
+- [ ] Put time into a PR for PIMT that allows it to have structured output to avoid the use of `sed` in processing its output.
