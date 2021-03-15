@@ -17,11 +17,11 @@ Usage: run.sh -v <CI_VERSION> [-f <path/to/plugins.yaml>] [-h] [-x]
 
 ## Examples
 
-A single run with the plugin.yaml file in the same directory as `run.sh`. This create `plugin-catalog.yaml` and updates `plugins.yaml`:
+A single run with the plugins.yaml file in the same directory as `run.sh`. This create `plugin-catalog.yaml` and updates `plugins.yaml`:
 
 `./run.sh -v 2.263.4.2`
 
-A single run with a specified path to plugin.yaml file, but using the `-x` option to turn off the "inplace update". This leave the `plugin.yaml` file alone and only output the `plugin-catalog.yaml` content to stdout.
+A single run with a specified path to plugins.yaml file, but using the `-x` option to turn off the "inplace update". This leave the `plugins.yaml` file alone and only output the `plugin-catalog.yaml` content to stdout.
 
 `./run.sh -v 2.263.4.2 -f /path/to/plugins.yaml -x`
 
@@ -36,7 +36,7 @@ Multiple runs taking advantage of caching and generating multiple different `plu
 
 ## Notes
 
-* This will update your `plugin.yaml` file unless you specify the `-x` flag.
+* This will update your `plugins.yaml` file unless you specify the `-x` flag.
 
 * This process caches all resources that it fetches under a `.cache` directory in the pwd. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
   * `jenkins.war` from the docker image
