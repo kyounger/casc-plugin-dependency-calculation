@@ -1,3 +1,12 @@
+# CloudBees CasC Plugin Catalog and Transitive Depedencies Calculator
+
+Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (any tier), and it will:
+
+1. Generate the `plugin-catalog.yaml` file for you in the same directory, including all versions and transitive dependencies.
+2. Update the `plugins.yaml` file you originally specifed with the additional transitive dependencies.
+
+This means that as long as you are willing to use the plugin versions in the CloudBees Update Centers (which you should be doing), then all you ever need to do is add plugins to the `plugins.yaml` file and this script will handle the rest. No more manually crafting plugin catalogs!
+
 ## Requirements
 
 * docker
