@@ -67,7 +67,9 @@ if [[ -f $WAR_CACHE_DIR/jenkins.war ]]; then
   echo "$WAR_CACHE_DIR/jenkins.war already exist, remove it if you need to refresh" >&2
 else
   mkdir -p $WAR_CACHE_DIR
-  docker run -ti -v $WAR_CACHE_DIR:/war --user root --entrypoint "" $CB_DOCKER_IMAGE:$CI_VERSION cp /usr/share/jenkins/jenkins.war /war/jenkins.war
+  CONTAINER_ID=$(docker create $CB_DOCKER_IMAGE:$CI_VERSION 2>/dev/null) 2>/dev/null
+  docker cp $CONTAINER_ID:/usr/share/jenkins/jenkins.war $WAR_CACHE_DIR 2>/dev/null
+  docker rm $CONTAINER_ID >/dev/null 2>&1
 fi
 
 #cache PIMT jar
