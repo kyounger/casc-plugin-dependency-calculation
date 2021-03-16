@@ -54,8 +54,8 @@ CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-mm"}
 #calculated vars
 CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
-#cache some stuff locally
-CACHE_BASE_DIR=$(pwd)/.cache
+#cache some stuff locally, sure cache directory exists
+CACHE_BASE_DIR=${CACHE_BASE_DIR:="$(pwd)/.cache"}
 mkdir -p $CACHE_BASE_DIR
 
 #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
@@ -70,27 +70,18 @@ else
   docker run -ti -v $WAR_CACHE_DIR:/war --user root --entrypoint "" $CB_DOCKER_IMAGE:$CI_VERSION cp /usr/share/jenkins/jenkins.war /war/jenkins.war
 fi
 
-#cache PIMT
-PIMT_CACHE_DIR=$CACHE_BASE_DIR/pimt
-if [[ -f $PIMT_CACHE_DIR/jenkins-plugin-manager.jar ]]; then
-  echo "$PIMT_CACHE_DIR/jenkins-plugin-manager.jar already exist, remove it if you need to refresh" >&2
+#cache PIMT jar
+PIMT_JAR_CACHE_DIR=$CACHE_BASE_DIR/pimt-jar
+if [[ -f $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar ]]; then
+  echo "$PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar already exist, remove it if you need to refresh" >&2
 else
-  mkdir -p $PIMT_CACHE_DIR
+  mkdir -p $PIMT_JAR_CACHE_DIR
   JAR_URL=$(curl -sL \
     -H "Accept: application/vnd.github.v3+json" \
     https://api.github.com/repos/jenkinsci/plugin-installation-manager-tool/releases/latest \
     | yq e '.assets[0].browser_download_url' -)
 
-  curl -sL $JAR_URL > $PIMT_CACHE_DIR/jenkins-plugin-manager.jar 
-fi
-
-#cache the UC locally (we use update-center.json as the file because that's what PIMT expects)
-UC_CACHE_DIR=$CACHE_BASE_DIR/uc/$CI_VERSION
-if [[ -f $UC_CACHE_DIR/update-center.json ]]; then
-  echo "$UC_CACHE_DIR/update-center.json already exist, remove it if you need to refresh" >&2
-else
-  mkdir -p $UC_CACHE_DIR
-  curl -sL "$CB_UPDATE_CENTER_URL" > $UC_CACHE_DIR/update-center.json
+  curl -sL $JAR_URL > $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar 
 fi
 
 PLUGIN_YAML_DIR=$(dirname $PLUGIN_YAML_PATH)
@@ -107,11 +98,12 @@ configurations:
 
 #run PIMT and reformat output to get the variable part
 export JENKINS_UC_HASH_FUNCTION="SHA1" 
-java -jar $PIMT_CACHE_DIR/jenkins-plugin-manager.jar \
+export CACHE_DIR=${CACHE_DIR:="$CACHE_BASE_DIR/jenkins-plugin-management-cli"}
+java -jar $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar \
   --war $WAR_CACHE_DIR/jenkins.war \
   --list \
   --no-download \
-  --jenkins-update-center "file://$UC_CACHE_DIR" \
+  --jenkins-update-center "$CB_UPDATE_CENTER_URL" \
   --plugins $LIST_OF_PLUGINS \
   | sed -n '/^Plugins\ that\ will\ be\ downloaded\:$/,/^Resulting\ plugin\ list\:$/p' \
   | sed '1d' | sed '$d' | sed '$d' \
