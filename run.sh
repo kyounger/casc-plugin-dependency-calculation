@@ -107,6 +107,7 @@ java -jar $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar \
   --no-download \
   --jenkins-update-center "$CB_UPDATE_CENTER_URL" \
   --plugins $LIST_OF_PLUGINS \
+  2>&1 >/dev/null \
   | sed -n '/^Plugins\ that\ will\ be\ downloaded\:$/,/^Resulting\ plugin\ list\:$/p' \
   | sed '1d' | sed '$d' | sed '$d' \
   | sed 's/ /: {version: "/g' \
