@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -9,6 +9,7 @@ Usage: ${0##*/} -v <CI_VERSION> [-f <path/to/plugins.yaml>] [-h] [-x]
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
+    -V          Verbose logging (for debugging purposes)
     -x          Do NOT do an inplace update of plugins.yaml
 EOF
 }
@@ -19,6 +20,7 @@ if [[ ${#} -eq 0 ]]; then
 fi
 
 # Initialize our own variables:
+VERBOSE_LOG=0
 INPLACE_UPDATE=1
 CI_VERSION=
 PLUGIN_YAML_PATH="plugins.yaml"
@@ -27,13 +29,15 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts hv:xf: opt; do
+while getopts hv:xf:V opt; do
     case $opt in
         h)
             show_help
             exit 0
             ;;
         v)  CI_VERSION=$OPTARG
+            ;;
+        V)  VERBOSE_LOG=1
             ;;
         f)  PLUGIN_YAML_PATH=$OPTARG
             ;;
@@ -47,6 +51,10 @@ while getopts hv:xf: opt; do
 done
 shift "$((OPTIND-1))"   # Discard the options and sentinel --
 
+#debug
+debug() {
+  [ $VERBOSE_LOG -eq 0 ] || echo -e "$*"
+}
 #adjustable vars. Will inherit from shell, but default to what you see here.
 CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-mm"}
 CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-mm"}
@@ -67,6 +75,7 @@ if [[ -f $WAR_CACHE_DIR/jenkins.war ]]; then
   echo "$WAR_CACHE_DIR/jenkins.war already exist, remove it if you need to refresh" >&2
 else
   mkdir -p $WAR_CACHE_DIR
+  docker pull $CB_DOCKER_IMAGE:$CI_VERSION
   CONTAINER_ID=$(docker create $CB_DOCKER_IMAGE:$CI_VERSION 2>/dev/null) 2>/dev/null
   docker cp $CONTAINER_ID:/usr/share/jenkins/jenkins.war $WAR_CACHE_DIR 2>/dev/null
   docker rm $CONTAINER_ID >/dev/null 2>&1
@@ -83,7 +92,7 @@ else
     https://api.github.com/repos/jenkinsci/plugin-installation-manager-tool/releases/latest \
     | yq e '.assets[0].browser_download_url' -)
 
-  curl -sL $JAR_URL > $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar 
+  curl -sL $JAR_URL > $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar
 fi
 
 PLUGIN_YAML_DIR=$(dirname $PLUGIN_YAML_PATH)
@@ -99,15 +108,22 @@ configurations:
   includePlugins:" > $CACHE_BASE_DIR/pc.yaml
 
 #run PIMT and reformat output to get the variable part
-export JENKINS_UC_HASH_FUNCTION="SHA1" 
+export JENKINS_UC_HASH_FUNCTION="SHA1"
 export CACHE_DIR=${CACHE_DIR:="$CACHE_BASE_DIR/jenkins-plugin-management-cli"}
-java -jar $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar \
+if TEMP_PLUGIN_OUTPUT=$(java -jar $PIMT_JAR_CACHE_DIR/jenkins-plugin-manager.jar \
   --war $WAR_CACHE_DIR/jenkins.war \
   --list \
   --no-download \
   --jenkins-update-center "$CB_UPDATE_CENTER_URL" \
-  --plugins $LIST_OF_PLUGINS \
-  2>&1 >/dev/null \
+  --plugins $LIST_OF_PLUGINS 2>&1); then
+  echo "Plugins resolved correctly."
+  debug "${TEMP_PLUGIN_OUTPUT}"
+else
+  echo "Plugins resolved correctly. See output below:"
+  echo "${TEMP_PLUGIN_OUTPUT}"
+  exit 1
+fi
+echo "${TEMP_PLUGIN_OUTPUT}" \
   | sed -n '/^Plugins\ that\ will\ be\ downloaded\:$/,/^Resulting\ plugin\ list\:$/p' \
   | sed '1d' | sed '$d' | sed '$d' \
   | sed 's/ /: {version: "/g' \
@@ -131,3 +147,7 @@ yq ea 'select(fileIndex == 0) * select(fileIndex == 1) | keys | {"plugins": ([{"
   $CACHE_BASE_DIR/temp1.yaml \
   $CACHE_BASE_DIR/temp2.yaml \
   > $PLUGIN_YAML_PATH
+
+# turn plugin-catalog into pretty yaml
+PRETTY_PLUGIN_CATALOG_PATH=$(yq e '.|to_json' $PLUGIN_CATALOG_PATH | yq -P)
+echo "${PRETTY_PLUGIN_CATALOG_PATH}" > $PLUGIN_CATALOG_PATH

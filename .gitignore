@@ -3,4 +3,5 @@ jenkins.war
 cb-*.war
 jenkins-plugin-manager.jar
 plugins.yaml
+plugin-catalog.yaml
 update-center.json
