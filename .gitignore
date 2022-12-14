@@ -5,3 +5,4 @@ jenkins-plugin-manager.jar
 plugins.yaml
 plugin-catalog.yaml
 update-center.json
+target
