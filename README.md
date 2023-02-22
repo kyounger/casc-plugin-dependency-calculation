@@ -10,23 +10,28 @@ This means that as long as you are willing to use the plugin versions in the Clo
 ## Requirements
 
 * docker
+* jq
 * yq (v4)
 * curl
 
 ## Usage
 
-```
-Usage: run.sh -v <CI_VERSION> [-f <path/to/plugins.yaml>] [-h] [-x]
+```sh
+Usage: run.sh -v <CI_VERSION> [OPTIONS]
 
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file
+    -t          The instance type (oc, oc-traditional, cm, mm)
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
-    -x          Do NOT do an inplace update of plugins.yaml
+    -V          Verbose logging (for debugging purposes)
+    -r          Refresh the downloaded wars/jars (no-cache)
+    -R          Refresh the downloaded update center jsons (no-cache)
+    -x          Inplace-update of plugins.yaml and plugin-catalog.yaml
 ```
 
 ## Examples
 
-A single run with the plugins.yaml file in the same directory as `run.sh`. This create `plugin-catalog.yaml` and updates `plugins.yaml`:
+A single run with the plugins.yaml file in the same directory as `run.sh`. This creates `plugin-catalog.yaml`:
 
 `./run.sh -v 2.263.4.2`
 
@@ -66,4 +71,6 @@ export CB_DOCKER_IMAGE="cloudbees/cloudbees-core-cm"
 - [x] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
 - [x] Put in some examples
 - [x] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
-- [ ] Put time into a PR for PIMT that allows it to have structured output to avoid the use of `sed` in processing its output.
+- [x] Put time into a PR for PIMT that allows it to have structured output to avoid the use of `sed` in processing its output.
+- [ ] Update the README to reflect the new script functionality.
+- [ ] Add the ability to create a `plugin-catalog.yaml` for an air-gapped installation.
