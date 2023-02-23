@@ -118,8 +118,10 @@ cacheWarFile() {
   else
     mkdir -p $WAR_CACHE_DIR
     if [ -n "${CB_WAR_DOWNLOAD_URL:-}" ]; then
-      curl --fail -sSL -o "${WAR_CACHE_FILE}" "${CB_WAR_DOWNLOAD_URL}"
+      info "Downloading war file from '${CB_WAR_DOWNLOAD_URL}'" >&2
+      curl --progress-bar --fail -L -o "${WAR_CACHE_FILE}" "${CB_WAR_DOWNLOAD_URL}"
     elif [ -n "${CB_DOCKER_IMAGE}" ]; then
+      info "Pulling docker image '$CB_DOCKER_IMAGE:$CI_VERSION'" >&2
       docker pull $CB_DOCKER_IMAGE:$CI_VERSION
       CONTAINER_ID=$(docker create $CB_DOCKER_IMAGE:$CI_VERSION 2>/dev/null) 2>/dev/null
       docker cp $CONTAINER_ID:/usr/share/jenkins/jenkins.war "${WAR_CACHE_FILE}" 2>/dev/null
