@@ -238,11 +238,31 @@ copyOrExtractMetaInformation() {
 
   # create some info lists from the envelope
   jq -r '.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
-    "${TARGET_GEN}/envelope.json" | sort > "${TARGET_GEN}/envelope.json.bootstrap.txt"
+    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.bootstrap.txt"
   jq -r '.plugins[]|select(.scope|test("(fat)"))|.artifactId' \
-    "${TARGET_GEN}/envelope.json" | sort > "${TARGET_GEN}/envelope.json.non-bootstrap.txt"
+    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.non-bootstrap.txt"
   jq -r '.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
-    "${TARGET_GEN}/envelope.json" | sort > "${TARGET_GEN}/envelope.json.all.txt"
+    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.all.txt"
+
+  # create some info lists from the online update-center
+  jq -r '.envelope.plugins[]|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
+  jq -r '.plugins[]|.name' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.plugins.all.txt"
+  jq -r '.envelope.plugins[]|"\(.artifactId):\(.version)"' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all-with-version.txt"
+  jq -r '.plugins[]|"\(.name):\(.version)"' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.plugins.all-with-version.txt"
+  jq -r '.envelope.plugins[]|select(.tier|test("(compatible)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.compatible.txt"
+  jq -r '.envelope.plugins[]|select(.tier|test("(proprietary)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.proprietary.txt"
+  jq -r '.envelope.plugins[]|select(.tier|test("(verified)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.verified.txt"
+  jq -r '.plugins[]|select((.labels != null) and (.labels[]|index("deprecated")) != null).name' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.deprecated.txt"
+  comm -13 "${TARGET_UC_ONLINE}.envelope.all.txt" "${TARGET_UC_ONLINE}.plugins.all.txt" \
+    > "${TARGET_UC_ONLINE}.tier.3rd-party.txt"
 
   # create some info lists from the platform-plugins
   jq -r '.[].plugins[]|select(.suggested != null)|.name' \
@@ -268,8 +288,8 @@ staticCheckOfRequiredPlugins() {
     jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | grep -E "^${p}$" &> /dev/null \
     || { [ $? -eq 1 ] && PLUGINS_MISSING_ONLINE="${PLUGINS_MISSING_ONLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
   done
-  [ -n "${PLUGINS_MISSING_ONLINE}" ] && die "PLUGINS_MISSING_ONLINE=${PLUGINS_MISSING_ONLINE}"
-  [ -n "${PLUGINS_MISSING_OFFLINE}" ] && warn "PLUGINS_MISSING_OFFLINE=${PLUGINS_MISSING_OFFLINE}"
+  [ -n "${PLUGINS_MISSING_ONLINE}" ] && die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
+  [ -n "${PLUGINS_MISSING_OFFLINE}" ] && warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
 }
 
 createPluginListsWithPIMT() {
