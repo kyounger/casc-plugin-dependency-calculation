@@ -331,7 +331,7 @@ createPluginListsWithPIMT() {
 createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
   touch "${TARGET_PLUGIN_CATALOG}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": []}]}' "${TARGET_PLUGIN_CATALOG}"
+  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${TARGET_PLUGIN_CATALOG}"
   for k in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
     v=$(k=$k yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
     k="$k" v="$v" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${TARGET_PLUGIN_CATALOG}"
