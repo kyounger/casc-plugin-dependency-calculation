@@ -182,7 +182,7 @@ setScriptVars() {
         CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-mm"}
           ;;
       oc)
-        CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-oc"}
+        CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-cloud-core-oc"}
           ;;
       cm)
         CB_WAR_DOWNLOAD_URL="${CB_DOWNLOADS_URL}/client-master/rolling/war/${CI_VERSION}/cloudbees-core-cm.war"
@@ -265,6 +265,9 @@ copyOrExtractMetaInformation() {
     die "Something went wrong. See above..."
   fi
 
+  # extract online envelope json
+  jq '.envelope' "${TARGET_UC_ONLINE}" > "${TARGET_UC_ONLINE}.envelope.json"
+
   # create some info lists from the envelope
   jq -r '.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.bootstrap.txt"
@@ -274,6 +277,13 @@ copyOrExtractMetaInformation() {
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.all.txt"
 
   # create some info lists from the online update-center
+  jq -r '.envelope.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.bootstrap.txt"
+  jq -r '.envelope.plugins[]|select(.scope|test("(fat)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.non-bootstrap.txt"
+  jq -r '.envelope.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
+
   jq -r '.envelope.plugins[]|.artifactId' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
   jq -r '.plugins[]|.name' \
@@ -304,10 +314,10 @@ copyOrExtractMetaInformation() {
 
 staticCheckOfRequiredPlugins() {
   # Static check: loop through plugins and ensure they exist in the downloaded update-center
-  debug "Plugins in ${TARGET_UC_OFFLINE}:
-  $(jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | sort)"
-  debug "Plugins in ${TARGET_UC_ONLINE}:
-  $(jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | sort)"
+  debug "Plugins in ${TARGET_UC_OFFLINE}:"
+  debug "$(jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | sort)"
+  debug "Plugins in ${TARGET_UC_ONLINE}:"
+  debug "$(jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | sort)"
   PLUGINS_MISSING_OFFLINE=''
   PLUGINS_MISSING_ONLINE=''
   for p in $LIST_OF_PLUGINS; do
@@ -317,8 +327,8 @@ staticCheckOfRequiredPlugins() {
     jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | grep -E "^${p}$" &> /dev/null \
     || { [ $? -eq 1 ] && PLUGINS_MISSING_ONLINE="${PLUGINS_MISSING_ONLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
   done
-  [ -n "${PLUGINS_MISSING_ONLINE}" ] && die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
-  [ -n "${PLUGINS_MISSING_OFFLINE}" ] && warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
+  [ -z "${PLUGINS_MISSING_ONLINE}" ] || die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
+  [ -z "${PLUGINS_MISSING_OFFLINE}" ] || warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
 }
 
 createPluginListsWithPIMT() {
@@ -345,7 +355,12 @@ createPluginListsWithPIMT() {
   fi
 
   info "Getting default plugins list after including plugins (${TARGET_ALL})"
-  if java "${PIMT_OPTIONS[@]}" --plugins "$(yq '.plugins[].id' plugins.yaml | xargs)" > "${TARGET_ALL}" 2> "${TARGET_ALL}${STDERR_LOG_SUFFIX}"; then
+  # NOTE: if you don't specify the plugin versions, it will try to process the latest
+  local LIST_OF_PLUGINS_WITH_VERSIONS=
+  for p in $LIST_OF_PLUGINS; do
+    LIST_OF_PLUGINS_WITH_VERSIONS="${LIST_OF_PLUGINS_WITH_VERSIONS} $(grep "^$p:.*$" "${TARGET_UC_ONLINE}.plugins.all-with-version.txt")"
+  done
+  if java "${PIMT_OPTIONS[@]}" --plugins $(echo "$LIST_OF_PLUGINS_WITH_VERSIONS" | xargs) > "${TARGET_ALL}" 2> "${TARGET_ALL}${STDERR_LOG_SUFFIX}"; then
     debug "$(cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}")"
   else
     cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}"
@@ -388,7 +403,7 @@ createPluginCatalogAndPluginsYaml() {
       # Call exec hook if available...
       if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ]; then
         info "Calling exec-hook ${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}..."
-        PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="$pluginSrc" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
+        PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="$pluginDest" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
       fi
       k="$pluginName" u="$pluginUrl" yq -i '.configurations[].includePlugins += { env(k): { "url": env(u) }} | style="double" ..' "${targetFile}"
     done
