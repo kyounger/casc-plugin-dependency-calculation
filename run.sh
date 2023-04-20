@@ -2,6 +2,19 @@
 
 set -euo pipefail
 
+# Initialize our own variables:
+STDERR_LOG_SUFFIX='.stderr.log'
+DOWNLOAD=0
+VERBOSE_LOG=0
+REFRESH=0
+REFRESH_UC=0
+INPLACE_UPDATE=1
+CI_VERSION=
+CI_TYPE=mm
+PLUGIN_YAML_PATH="plugins.yaml"
+PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT='http://plugin-catalog/plugins/$PNAME/$PVERSION'
+PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
+
 show_help() {
 cat << EOF
 Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
@@ -9,6 +22,13 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file
     -t          The instance type (oc, oc-traditional, cm, mm)
+    -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
+    -D          Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
+                    defaults to $PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT
+    -e          Exec-hook - script to call when processing 3rd party plugins
+                    script will have access env vars PNAME, PVERSION, PURL, PFILE
+                    can be used to automate the uploading of plugins to a repository manager
+                    see examples under examples/exec-hooks
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -V          Verbose logging (for debugging purposes)
     -r          Refresh the downloaded wars/jars (no-cache)
@@ -22,21 +42,11 @@ if [[ ${#} -eq 0 ]]; then
    exit 0
 fi
 
-# Initialize our own variables:
-STDERR_LOG_SUFFIX='.stderr.log'
-VERBOSE_LOG=0
-REFRESH=0
-REFRESH_UC=0
-INPLACE_UPDATE=1
-CI_VERSION=
-CI_TYPE=mm
-PLUGIN_YAML_PATH="plugins.yaml"
-
 OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts hv:xf:rRt:V opt; do
+while getopts hv:xf:rRt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -47,6 +57,12 @@ while getopts hv:xf:rRt:V opt; do
         t)  CI_TYPE=$OPTARG
             ;;
         V)  VERBOSE_LOG=1
+            ;;
+        d)  DOWNLOAD=1
+            ;;
+        D)  PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
+            ;;
+        e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
         f)  PLUGIN_YAML_PATH=$OPTARG
             ;;
@@ -153,6 +169,12 @@ setScriptVars() {
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
 
+  # some general sanity checks
+  if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}" ]; then
+    [ -f "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be a file"
+    [ -x "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be executable"
+  fi
+
   # type based vars
   CB_DOWNLOADS_URL="https://downloads.cloudbees.com/cloudbees-core/traditional"
   case $CI_TYPE in
@@ -177,6 +199,7 @@ setScriptVars() {
 
   #adjustable vars. Will inherit from shell, but default to what you see here.
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
+  PLUGIN_CATALOG_OFFLINE_URL_BASE=${PLUGIN_CATALOG_OFFLINE_URL_BASE:=$PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}
   #calculated vars
   CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
@@ -187,6 +210,10 @@ setScriptVars() {
   CB_UPDATE_CENTER_CACHE_DIR=$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/update-center
   CB_UPDATE_CENTER_CACHE_FILE="${CB_UPDATE_CENTER_CACHE_DIR}/update-center.json"
   PIMT_JAR_CACHE_DIR=$CACHE_BASE_DIR/pimt-jar
+  PLUGINS_CACHE_DIR=$CACHE_BASE_DIR/plugins
+
+  # target base dir
+  TARGET_BASE_DIR=${TARGET_BASE_DIR:="$(pwd)/target"}
 
 
   #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
@@ -197,7 +224,7 @@ setScriptVars() {
 
 createTargetDirs() {
   # Set target files
-  TARGET_DIR="target/${CI_VERSION}/${CI_TYPE}"
+  TARGET_DIR="${TARGET_BASE_DIR}/${CI_VERSION}/${CI_TYPE}"
   TARGET_GEN="${TARGET_DIR}/generated"
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
   TARGET_ALL="${TARGET_GEN}/pimt-with-plugins.yaml"
@@ -208,7 +235,9 @@ createTargetDirs() {
   TARGET_ENVELOPE="${TARGET_GEN}/envelope.json"
   TARGET_ENVELOPE_DIFF="${TARGET_GEN}/envelope.json.diff.txt"
   TARGET_PLUGIN_CATALOG="${TARGET_DIR}/plugin-catalog.yaml"
+  TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/$(basename $PLUGIN_YAML_PATH)"
+  TARGET_PLUGINS_DIR="${TARGET_GEN}/plugins"
 
   info "Creating target dir (${TARGET_DIR})"
   rm -rf "${TARGET_DIR}"
@@ -296,11 +325,13 @@ createPluginListsWithPIMT() {
   #run PIMT and reformat output to get the variable part
   export JENKINS_UC_HASH_FUNCTION="SHA1"
   [ $VERBOSE_LOG -eq 0 ] && PIMT_VERBOSE= || PIMT_VERBOSE=--verbose
+  [ $DOWNLOAD -eq 0 ] && PIMT_DOWNLOAD=--no-download || PIMT_DOWNLOAD="-d $TARGET_PLUGINS_DIR"
+
   PIMT_OPTIONS=(
     -jar $PIMT_JAR_CACHE_FILE \
     --war $WAR_CACHE_FILE \
     --list \
-    --no-download \
+    $PIMT_DOWNLOAD \
     --output YAML \
     --jenkins-update-center "${CB_UPDATE_CENTER_URL}" \
     $PIMT_VERBOSE)
@@ -330,12 +361,38 @@ createPluginListsWithPIMT() {
 
 createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
-  touch "${TARGET_PLUGIN_CATALOG}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${TARGET_PLUGIN_CATALOG}"
-  for k in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
-    v=$(k=$k yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
-    k="$k" v="$v" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${TARGET_PLUGIN_CATALOG}"
+  # create the plugin catalog
+  local targetFile="${TARGET_PLUGIN_CATALOG}"
+  touch "${targetFile}"
+  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${targetFile}"
+  for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
+    pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
+    k="$pluginName" v="$pluginVersion" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${targetFile}"
   done
+  # if the plugins were downloaded, copy and create an offline plugin catalog
+  if [ -d "${TARGET_PLUGINS_DIR}" ]; then
+    info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
+    targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
+    touch "${targetFile}"
+    yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${targetFile}"
+    for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
+      pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
+      pluginSrc="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
+      pluginFile=$(basename "${pluginSrc}")
+      pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginFile}"
+      pluginUrl=$(PNAME="${pluginName}" PVERSION="${pluginVersion}" envsubst <<< "${PLUGIN_CATALOG_OFFLINE_URL_BASE}/${pluginFile}")
+      # Copy to cache...
+      mkdir -p $(dirname "${pluginDest}")
+      info "Copying plugin from ${pluginSrc} -> ${pluginDest}"
+      cp "${pluginSrc}" "${pluginDest}"
+      # Call exec hook if available...
+      if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ]; then
+        info "Calling exec-hook ${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}..."
+        PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="$pluginSrc" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
+      fi
+      k="$pluginName" u="$pluginUrl" yq -i '.configurations[].includePlugins += { env(k): { "url": env(u) }} | style="double" ..' "${targetFile}"
+    done
+  fi
 
   #temporarily reformat each file to allow a proper yaml merge
   yq e '.plugins[].id | {.: {}}' "$PLUGIN_YAML_PATH" > $TARGET_GEN/temp1.yaml
