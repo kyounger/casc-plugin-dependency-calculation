@@ -2,6 +2,19 @@
 
 set -euo pipefail
 
+# Initialize our own variables:
+STDERR_LOG_SUFFIX='.stderr.log'
+DOWNLOAD=0
+VERBOSE_LOG=0
+REFRESH=0
+REFRESH_UC=0
+INPLACE_UPDATE=0
+CI_VERSION=
+CI_TYPE=mm
+PLUGIN_YAML_PATH="plugins.yaml"
+PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT='http://plugin-catalog/plugins/$PNAME/$PVERSION'
+PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
+
 show_help() {
 cat << EOF
 Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
@@ -9,6 +22,13 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file
     -t          The instance type (oc, oc-traditional, cm, mm)
+    -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
+    -D          Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
+                    defaults to $PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT
+    -e          Exec-hook - script to call when processing 3rd party plugins
+                    script will have access env vars PNAME, PVERSION, PURL, PFILE
+                    can be used to automate the uploading of plugins to a repository manager
+                    see examples under examples/exec-hooks
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -V          Verbose logging (for debugging purposes)
     -r          Refresh the downloaded wars/jars (no-cache)
@@ -22,21 +42,11 @@ if [[ ${#} -eq 0 ]]; then
    exit 0
 fi
 
-# Initialize our own variables:
-STDERR_LOG_SUFFIX='.stderr.log'
-VERBOSE_LOG=0
-REFRESH=0
-REFRESH_UC=0
-INPLACE_UPDATE=1
-CI_VERSION=
-CI_TYPE=mm
-PLUGIN_YAML_PATH="plugins.yaml"
-
 OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts hv:xf:rRt:V opt; do
+while getopts hv:xf:rRt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -48,9 +58,15 @@ while getopts hv:xf:rRt:V opt; do
             ;;
         V)  VERBOSE_LOG=1
             ;;
+        d)  DOWNLOAD=1
+            ;;
+        D)  PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
+            ;;
+        e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
+            ;;
         f)  PLUGIN_YAML_PATH=$OPTARG
             ;;
-        x)  INPLACE_UPDATE=0
+        x)  INPLACE_UPDATE=1
             ;;
         r)  REFRESH=1
             ;;
@@ -153,6 +169,12 @@ setScriptVars() {
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
 
+  # some general sanity checks
+  if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}" ]; then
+    [ -f "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be a file"
+    [ -x "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be executable"
+  fi
+
   # type based vars
   CB_DOWNLOADS_URL="https://downloads.cloudbees.com/cloudbees-core/traditional"
   case $CI_TYPE in
@@ -160,7 +182,7 @@ setScriptVars() {
         CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-mm"}
           ;;
       oc)
-        CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-core-oc"}
+        CB_DOCKER_IMAGE=${CB_DOCKER_IMAGE:="cloudbees/cloudbees-cloud-core-oc"}
           ;;
       cm)
         CB_WAR_DOWNLOAD_URL="${CB_DOWNLOADS_URL}/client-master/rolling/war/${CI_VERSION}/cloudbees-core-cm.war"
@@ -177,16 +199,22 @@ setScriptVars() {
 
   #adjustable vars. Will inherit from shell, but default to what you see here.
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
+  PLUGIN_CATALOG_OFFLINE_URL_BASE=${PLUGIN_CATALOG_OFFLINE_URL_BASE:=$PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}
   #calculated vars
-  CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
+  CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json"
 
   #cache some stuff locally, sure cache directory exists
+  CURRENT_DIR=$(pwd)
   CACHE_BASE_DIR=${CACHE_BASE_DIR:="$(pwd)/.cache"}
   WAR_CACHE_DIR=$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/war
   WAR_CACHE_FILE="${WAR_CACHE_DIR}/jenkins.war"
   CB_UPDATE_CENTER_CACHE_DIR=$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/update-center
   CB_UPDATE_CENTER_CACHE_FILE="${CB_UPDATE_CENTER_CACHE_DIR}/update-center.json"
   PIMT_JAR_CACHE_DIR=$CACHE_BASE_DIR/pimt-jar
+  PLUGINS_CACHE_DIR=$CACHE_BASE_DIR/plugins
+
+  # target base dir
+  TARGET_BASE_DIR=${TARGET_BASE_DIR:="$(pwd)/target"}
 
 
   #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
@@ -197,7 +225,7 @@ setScriptVars() {
 
 createTargetDirs() {
   # Set target files
-  TARGET_DIR="target/${CI_VERSION}/${CI_TYPE}"
+  TARGET_DIR="${TARGET_BASE_DIR}/${CI_VERSION}/${CI_TYPE}"
   TARGET_GEN="${TARGET_DIR}/generated"
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
   TARGET_ALL="${TARGET_GEN}/pimt-with-plugins.yaml"
@@ -208,7 +236,15 @@ createTargetDirs() {
   TARGET_ENVELOPE="${TARGET_GEN}/envelope.json"
   TARGET_ENVELOPE_DIFF="${TARGET_GEN}/envelope.json.diff.txt"
   TARGET_PLUGIN_CATALOG="${TARGET_DIR}/plugin-catalog.yaml"
+  TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/$(basename $PLUGIN_YAML_PATH)"
+  TARGET_PLUGINS_DIR="${TARGET_GEN}/plugins"
+  # original files
+  TARGET_PLUGINS_YAML_ORIG="${TARGET_PLUGINS_YAML}.orig.yaml"
+  TARGET_PLUGIN_CATALOG_ORIG="${TARGET_PLUGIN_CATALOG}.orig.yaml"
+  # sanitized files
+  TARGET_PLUGINS_YAML_ORIG_SANITIZED="${TARGET_PLUGINS_YAML}.orig.sanitized.yaml"
+  TARGET_PLUGIN_CATALOG_ORIG_SANITIZED="${TARGET_PLUGIN_CATALOG}.orig.sanitized.yaml"
 
   info "Creating target dir (${TARGET_DIR})"
   rm -rf "${TARGET_DIR}"
@@ -217,8 +253,16 @@ createTargetDirs() {
 
 copyOrExtractMetaInformation() {
   # save a copy of the original json files
-  cp "${PLUGIN_YAML_PATH}" "${TARGET_GEN}/original.plugins.yaml"
-  cp "${PLUGIN_CATALOG_PATH}" "${TARGET_GEN}/original.plugin-catalog.yaml"
+  cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG}"
+  # copy again and sanitize (better for comparing later)
+  cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}"
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}"
+  # same for the plugin-catalog.yaml (if it exists)
+  if [ -f "${PLUGIN_CATALOG_PATH}" ]; then
+    cp "${PLUGIN_CATALOG_PATH}" "${TARGET_PLUGIN_CATALOG_ORIG}"
+    cp "${PLUGIN_CATALOG_PATH}" "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED}"
+    yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED}"
+  fi
 
   # copy meta data json files
   cp "${PLUGIN_YAML_PATH}" "${TARGET_DIR}/"
@@ -236,6 +280,9 @@ copyOrExtractMetaInformation() {
     die "Something went wrong. See above..."
   fi
 
+  # extract online envelope json
+  jq '.envelope' "${TARGET_UC_ONLINE}" > "${TARGET_UC_ONLINE}.envelope.json"
+
   # create some info lists from the envelope
   jq -r '.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.bootstrap.txt"
@@ -243,8 +290,17 @@ copyOrExtractMetaInformation() {
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.non-bootstrap.txt"
   jq -r '.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.all.txt"
+  jq -r '.plugins[]|"\(.artifactId):\(.version)"' \
+    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.all-with-version.txt"
 
   # create some info lists from the online update-center
+  jq -r '.envelope.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.bootstrap.txt"
+  jq -r '.envelope.plugins[]|select(.scope|test("(fat)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.non-bootstrap.txt"
+  jq -r '.envelope.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
+
   jq -r '.envelope.plugins[]|.artifactId' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
   jq -r '.plugins[]|.name' \
@@ -275,10 +331,10 @@ copyOrExtractMetaInformation() {
 
 staticCheckOfRequiredPlugins() {
   # Static check: loop through plugins and ensure they exist in the downloaded update-center
-  debug "Plugins in ${TARGET_UC_OFFLINE}:
-  $(jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | sort)"
-  debug "Plugins in ${TARGET_UC_ONLINE}:
-  $(jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | sort)"
+  debug "Plugins in ${TARGET_UC_OFFLINE}:"
+  debug "$(jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | sort)"
+  debug "Plugins in ${TARGET_UC_ONLINE}:"
+  debug "$(jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | sort)"
   PLUGINS_MISSING_OFFLINE=''
   PLUGINS_MISSING_ONLINE=''
   for p in $LIST_OF_PLUGINS; do
@@ -288,19 +344,25 @@ staticCheckOfRequiredPlugins() {
     jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | grep -E "^${p}$" &> /dev/null \
     || { [ $? -eq 1 ] && PLUGINS_MISSING_ONLINE="${PLUGINS_MISSING_ONLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
   done
-  [ -n "${PLUGINS_MISSING_ONLINE}" ] && die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
-  [ -n "${PLUGINS_MISSING_OFFLINE}" ] && warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
+  [ -z "${PLUGINS_MISSING_ONLINE}" ] || die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
+  [ -z "${PLUGINS_MISSING_OFFLINE}" ] || warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
 }
 
 createPluginListsWithPIMT() {
   #run PIMT and reformat output to get the variable part
-  export JENKINS_UC_HASH_FUNCTION="SHA1"
+  if [ -z "${JENKINS_UC_HASH_FUNCTION:-}" ]; then
+    export JENKINS_UC_HASH_FUNCTION="SHA1"
+    warn "Using the deprecated JENKINS_UC_HASH_FUNCTION=$JENKINS_UC_HASH_FUNCTION for backwards compatibility. Try setting to SHA256 for better security, or set explicitly to SHA1 to remove this message."
+  fi
   [ $VERBOSE_LOG -eq 0 ] && PIMT_VERBOSE= || PIMT_VERBOSE=--verbose
+  [ $DOWNLOAD -eq 0 ] && PIMT_DOWNLOAD=--no-download || PIMT_DOWNLOAD="-d $TARGET_PLUGINS_DIR"
+
   PIMT_OPTIONS=(
     -jar $PIMT_JAR_CACHE_FILE \
     --war $WAR_CACHE_FILE \
     --list \
-    --no-download \
+    $PIMT_DOWNLOAD \
+    --jenkins-version $CI_VERSION \
     --output YAML \
     --jenkins-update-center "${CB_UPDATE_CENTER_URL}" \
     $PIMT_VERBOSE)
@@ -314,7 +376,12 @@ createPluginListsWithPIMT() {
   fi
 
   info "Getting default plugins list after including plugins (${TARGET_ALL})"
-  if java "${PIMT_OPTIONS[@]}" --plugins "$(yq '.plugins[].id' plugins.yaml | xargs)" > "${TARGET_ALL}" 2> "${TARGET_ALL}${STDERR_LOG_SUFFIX}"; then
+  # NOTE: if you don't specify the plugin versions, it will try to process the latest
+  local LIST_OF_PLUGINS_WITH_VERSIONS=
+  for p in $LIST_OF_PLUGINS; do
+    LIST_OF_PLUGINS_WITH_VERSIONS="${LIST_OF_PLUGINS_WITH_VERSIONS} $(grep "^$p:.*$" "${TARGET_UC_ONLINE}.plugins.all-with-version.txt")"
+  done
+  if java "${PIMT_OPTIONS[@]}" --plugins $(echo "$LIST_OF_PLUGINS_WITH_VERSIONS" | xargs) > "${TARGET_ALL}" 2> "${TARGET_ALL}${STDERR_LOG_SUFFIX}"; then
     debug "$(cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}")"
   else
     cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}"
@@ -328,24 +395,71 @@ createPluginListsWithPIMT() {
   done
 }
 
+showSummaryResult() {
+cat << EOF
+Summary:
+
+  Difference between current vs new plugins.yaml
+    diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
+    tail -vn 100 "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
+
+  Difference between current vs new plugin-catalog.yaml
+    diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+    tail -vn 100 "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+
+  If '-d' was used, you can find the plugin-catalog-offline.yaml here
+    cat "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
+EOF
+}
+
 createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
-  touch "${TARGET_PLUGIN_CATALOG}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${TARGET_PLUGIN_CATALOG}"
-  for k in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
-    v=$(k=$k yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
-    k="$k" v="$v" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${TARGET_PLUGIN_CATALOG}"
+  # create the plugin catalog
+  local targetFile="${TARGET_PLUGIN_CATALOG}"
+  touch "${targetFile}"
+  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${targetFile}"
+  for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
+    pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
+    k="$pluginName" v="$pluginVersion" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${targetFile}"
   done
+  # if the plugins were downloaded, copy and create an offline plugin catalog
+  if [ -d "${TARGET_PLUGINS_DIR}" ]; then
+    info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
+    targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
+    touch "${targetFile}"
+    yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${targetFile}"
+    for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
+      pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
+      pluginSrc="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
+      pluginFile=$(basename "${pluginSrc}")
+      pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginFile}"
+      pluginUrl=$(PNAME="${pluginName}" PVERSION="${pluginVersion}" envsubst <<< "${PLUGIN_CATALOG_OFFLINE_URL_BASE}/${pluginFile}")
+      # Copy to cache...
+      mkdir -p $(dirname "${pluginDest}")
+      info "Copying plugin from ${pluginSrc} -> ${pluginDest}"
+      cp "${pluginSrc}" "${pluginDest}"
+      # Call exec hook if available...
+      if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ]; then
+        info "Calling exec-hook ${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}..."
+        PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="$pluginDest" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
+      fi
+      k="$pluginName" u="$pluginUrl" yq -i '.configurations[].includePlugins += { env(k): { "url": env(u) }} | style="double" ..' "${targetFile}"
+    done
+  fi
 
   #temporarily reformat each file to allow a proper yaml merge
-  yq e '.plugins[].id | {.: {}}' "$PLUGIN_YAML_PATH" > $TARGET_GEN/temp1.yaml
-  yq e '.configurations[].includePlugins[]' "$PLUGIN_CATALOG_PATH" > $TARGET_GEN/temp2.yaml
+  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGINS_YAML_ORIG" > $TARGET_GEN/temp1.yaml
+  yq e '.configurations[].includePlugins' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
 
   #merge our newly found dependencies from the calculated plugin-catalog.yaml into plugins.yaml
   yq ea 'select(fileIndex == 0) * select(fileIndex == 1) | keys | {"plugins": ([{"id": .[]}])}' \
     "${TARGET_GEN}/temp1.yaml" \
     "${TARGET_GEN}/temp2.yaml" \
     > "${TARGET_PLUGINS_YAML}" && rm "${TARGET_GEN}/temp"*
+
+  # sanitize the final files for comparing later on
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML}"
+  yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG}"
 
   # TODO: summary of plugins in plugins.yaml, stating...
   # - tier
@@ -372,10 +486,8 @@ createPluginCatalogAndPluginsYaml() {
   # copy if required
   if [ $INPLACE_UPDATE -eq 1 ]; then
     #write the the inplace updated plugin-catalog.yaml
-    cp "${TARGET_PLUGINS_YAML}" "$PLUGIN_CATALOG_PATH"
+    cp "${TARGET_PLUGINS_YAML}" "$PLUGIN_YAML_PATH"
     cp "${TARGET_PLUGIN_CATALOG}" "$PLUGIN_CATALOG_PATH"
-  else
-    cat "${TARGET_PLUGIN_CATALOG}"
   fi
 }
 
@@ -389,3 +501,4 @@ copyOrExtractMetaInformation
 staticCheckOfRequiredPlugins
 createPluginListsWithPIMT
 createPluginCatalogAndPluginsYaml
+showSummaryResult

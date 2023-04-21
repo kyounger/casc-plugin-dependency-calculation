@@ -1,0 +1,10 @@
+plugins:
+  - id: cloudbees-casc-client
+  - id: cloudbees-casc-items-api
+  - id: cloudbees-casc-items-commons
+  - id: cloudbees-prometheus
+  - id: configuration-as-code
+  - id: saml
+  - id: view-job-filters
+  - id: git
+  - id: git-client

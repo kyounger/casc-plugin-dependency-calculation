@@ -1,0 +1,22 @@
+plugins:
+  - id: cloudbees-casc-items-controller
+  - id: cloudbees-casc-client
+  - id: cloudbees-casc-items-api
+  - id: cloudbees-casc-items-commons
+  - id: git
+  - id: sshd
+  - id: ssh-credentials
+  - id: configuration-as-code
+  - id: ansible
+  - id: github
+  - id: job-dsl
+  - id: opentelemetry
+  - id: configuration-as-code
+  - id: cloudbees-prometheus
+  - id: uno-choice
+  - id: saml
+  - id: managed-master-hibernation
+  - id: workflow-multibranch
+  - id: cloudbees-workflow-template
+  # - id: bitbucket-kubernetes-credentials
+  # - id: aws-secrets-manager-secret-source
