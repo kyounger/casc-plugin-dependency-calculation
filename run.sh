@@ -8,7 +8,7 @@ DOWNLOAD=0
 VERBOSE_LOG=0
 REFRESH=0
 REFRESH_UC=0
-INPLACE_UPDATE=1
+INPLACE_UPDATE=0
 CI_VERSION=
 CI_TYPE=mm
 PLUGIN_YAML_PATH="plugins.yaml"
@@ -66,7 +66,7 @@ while getopts hv:xf:rRt:VdD:e: opt; do
             ;;
         f)  PLUGIN_YAML_PATH=$OPTARG
             ;;
-        x)  INPLACE_UPDATE=0
+        x)  INPLACE_UPDATE=1
             ;;
         r)  REFRESH=1
             ;;
@@ -275,6 +275,8 @@ copyOrExtractMetaInformation() {
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.non-bootstrap.txt"
   jq -r '.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.all.txt"
+  jq -r '.plugins[]|"\(.artifactId):\(.version)"' \
+    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE}.all-with-version.txt"
 
   # create some info lists from the online update-center
   jq -r '.envelope.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
@@ -444,7 +446,7 @@ createPluginCatalogAndPluginsYaml() {
   # copy if required
   if [ $INPLACE_UPDATE -eq 1 ]; then
     #write the the inplace updated plugin-catalog.yaml
-    cp "${TARGET_PLUGINS_YAML}" "$PLUGIN_CATALOG_PATH"
+    cp "${TARGET_PLUGINS_YAML}" "$PLUGIN_YAML_PATH"
     cp "${TARGET_PLUGIN_CATALOG}" "$PLUGIN_CATALOG_PATH"
   else
     cat "${TARGET_PLUGIN_CATALOG}"

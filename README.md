@@ -48,24 +48,23 @@ A single run with the plugins.yaml file in the same directory as `run.sh`. This 
 
 `./run.sh -v 2.263.4.2`
 
-A single run with a specified path to plugins.yaml file, but using the `-x` option to turn off the "inplace update". This leave the `plugins.yaml` file alone and only output the `plugin-catalog.yaml` content to stdout.
+A single run with a specified path to plugins.yaml file, but using the `-x` option to turn on the "inplace update". This will overwrite the `plugins.yaml` and `plugin-catalog.yaml` files.
 
 `./run.sh -v 2.263.4.2 -f /path/to/plugins.yaml -x`
 
 Multiple runs taking advantage of caching and generating multiple different `plugin-catalogs.yaml` and updating their corresponding `plugins.yaml`:
 
 ``` bash
-./run.sh -v 2.263.1.2 -f /bundle1/plugins.yaml
-./run.sh -v 2.263.4.2 -f /bundle2/plugins.yaml
-./run.sh -v 2.263.4.2 -f /bundle3/plugins.yaml
-./run.sh -v 2.277.1.2 -f /bundle4/plugins.yaml
+./run.sh -v 2.263.1.2 -f /bundle1/plugins.yaml -x
+./run.sh -v 2.263.4.2 -f /bundle2/plugins.yaml -x
+./run.sh -v 2.263.4.2 -f /bundle3/plugins.yaml -x
+./run.sh -v 2.277.1.2 -f /bundle4/plugins.yaml -x
 ```
 
 ## Notes
 
-* This will update your `plugins.yaml` file unless you specify the `-x` flag.
-
-* This process caches all resources that it fetches under a `.cache` directory in the pwd. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
+* This will NOT update your `plugins.yaml` file unless you specify the `-x` flag.
+* This process caches all resources that it fetches under a `.cache` directory in the PWD. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
   * `jenkins.war` from the docker image
   * `jenkins-plugin-manager.jar` download from github releases
   * `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
