@@ -201,9 +201,10 @@ setScriptVars() {
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
   PLUGIN_CATALOG_OFFLINE_URL_BASE=${PLUGIN_CATALOG_OFFLINE_URL_BASE:=$PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}
   #calculated vars
-  CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
+  CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json"
 
   #cache some stuff locally, sure cache directory exists
+  CURRENT_DIR=$(pwd)
   CACHE_BASE_DIR=${CACHE_BASE_DIR:="$(pwd)/.cache"}
   WAR_CACHE_DIR=$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/war
   WAR_CACHE_FILE="${WAR_CACHE_DIR}/jenkins.war"
@@ -238,6 +239,12 @@ createTargetDirs() {
   TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/$(basename $PLUGIN_YAML_PATH)"
   TARGET_PLUGINS_DIR="${TARGET_GEN}/plugins"
+  # original files
+  TARGET_PLUGINS_YAML_ORIG="${TARGET_PLUGINS_YAML}.orig.yaml"
+  TARGET_PLUGIN_CATALOG_ORIG="${TARGET_PLUGIN_CATALOG}.orig.yaml"
+  # sanitized files
+  TARGET_PLUGINS_YAML_ORIG_SANITIZED="${TARGET_PLUGINS_YAML}.orig.sanitized.yaml"
+  TARGET_PLUGIN_CATALOG_ORIG_SANITIZED="${TARGET_PLUGIN_CATALOG}.orig.sanitized.yaml"
 
   info "Creating target dir (${TARGET_DIR})"
   rm -rf "${TARGET_DIR}"
@@ -246,8 +253,16 @@ createTargetDirs() {
 
 copyOrExtractMetaInformation() {
   # save a copy of the original json files
-  cp "${PLUGIN_YAML_PATH}" "${TARGET_GEN}/original.plugins.yaml"
-  cp "${PLUGIN_CATALOG_PATH}" "${TARGET_GEN}/original.plugin-catalog.yaml"
+  cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG}"
+  # copy again and sanitize (better for comparing later)
+  cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}"
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}"
+  # same for the plugin-catalog.yaml (if it exists)
+  if [ -f "${PLUGIN_CATALOG_PATH}" ]; then
+    cp "${PLUGIN_CATALOG_PATH}" "${TARGET_PLUGIN_CATALOG_ORIG}"
+    cp "${PLUGIN_CATALOG_PATH}" "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED}"
+    yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED}"
+  fi
 
   # copy meta data json files
   cp "${PLUGIN_YAML_PATH}" "${TARGET_DIR}/"
@@ -335,7 +350,10 @@ staticCheckOfRequiredPlugins() {
 
 createPluginListsWithPIMT() {
   #run PIMT and reformat output to get the variable part
-  export JENKINS_UC_HASH_FUNCTION="SHA1"
+  if [ -z "${JENKINS_UC_HASH_FUNCTION:-}" ]; then
+    export JENKINS_UC_HASH_FUNCTION="SHA1"
+    warn "Using the deprecated JENKINS_UC_HASH_FUNCTION=$JENKINS_UC_HASH_FUNCTION for backwards compatibility. Try setting to SHA256 for better security, or set explicitly to SHA1 to remove this message."
+  fi
   [ $VERBOSE_LOG -eq 0 ] && PIMT_VERBOSE= || PIMT_VERBOSE=--verbose
   [ $DOWNLOAD -eq 0 ] && PIMT_DOWNLOAD=--no-download || PIMT_DOWNLOAD="-d $TARGET_PLUGINS_DIR"
 
@@ -344,6 +362,7 @@ createPluginListsWithPIMT() {
     --war $WAR_CACHE_FILE \
     --list \
     $PIMT_DOWNLOAD \
+    --jenkins-version $CI_VERSION \
     --output YAML \
     --jenkins-update-center "${CB_UPDATE_CENTER_URL}" \
     $PIMT_VERBOSE)
@@ -374,6 +393,23 @@ createPluginListsWithPIMT() {
   for k in $(yq '.plugins[].artifactId' "${TARGET_NONE}"); do
     k=$k yq -i 'del(.plugins[] | select(.artifactId == env(k)))' "${TARGET_DIFF}"
   done
+}
+
+showSummaryResult() {
+cat << EOF
+Summary:
+
+  Difference between current vs new plugins.yaml
+    diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
+    tail -vn 100 "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
+
+  Difference between current vs new plugin-catalog.yaml
+    diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+    tail -vn 100 "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+
+  If '-d' was used, you can find the plugin-catalog-offline.yaml here
+    cat "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
+EOF
 }
 
 createPluginCatalogAndPluginsYaml() {
@@ -412,14 +448,18 @@ createPluginCatalogAndPluginsYaml() {
   fi
 
   #temporarily reformat each file to allow a proper yaml merge
-  yq e '.plugins[].id | {.: {}}' "$PLUGIN_YAML_PATH" > $TARGET_GEN/temp1.yaml
-  yq e '.configurations[].includePlugins[]' "$PLUGIN_CATALOG_PATH" > $TARGET_GEN/temp2.yaml
+  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGINS_YAML_ORIG" > $TARGET_GEN/temp1.yaml
+  yq e '.configurations[].includePlugins' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
 
   #merge our newly found dependencies from the calculated plugin-catalog.yaml into plugins.yaml
   yq ea 'select(fileIndex == 0) * select(fileIndex == 1) | keys | {"plugins": ([{"id": .[]}])}' \
     "${TARGET_GEN}/temp1.yaml" \
     "${TARGET_GEN}/temp2.yaml" \
     > "${TARGET_PLUGINS_YAML}" && rm "${TARGET_GEN}/temp"*
+
+  # sanitize the final files for comparing later on
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML}"
+  yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG}"
 
   # TODO: summary of plugins in plugins.yaml, stating...
   # - tier
@@ -448,8 +488,6 @@ createPluginCatalogAndPluginsYaml() {
     #write the the inplace updated plugin-catalog.yaml
     cp "${TARGET_PLUGINS_YAML}" "$PLUGIN_YAML_PATH"
     cp "${TARGET_PLUGIN_CATALOG}" "$PLUGIN_CATALOG_PATH"
-  else
-    cat "${TARGET_PLUGIN_CATALOG}"
   fi
 }
 
@@ -463,3 +501,4 @@ copyOrExtractMetaInformation
 staticCheckOfRequiredPlugins
 createPluginListsWithPIMT
 createPluginCatalogAndPluginsYaml
+showSummaryResult
