@@ -159,7 +159,7 @@ cacheUpdateCenter() {
     info "$(basename ${CB_UPDATE_CENTER_CACHE_FILE}) already exist, remove it or use the '-R' flag" >&2
   else
     mkdir -p $CB_UPDATE_CENTER_CACHE_DIR
-    curl --fail -sSL "${CB_UPDATE_CENTER_URL}" > "${CB_UPDATE_CENTER_CACHE_FILE}"
+    curl --fail -sSL "${CB_UPDATE_CENTER_URL_WITH_VERSION}" > "${CB_UPDATE_CENTER_CACHE_FILE}"
   fi
 }
 
@@ -202,6 +202,7 @@ setScriptVars() {
   PLUGIN_CATALOG_OFFLINE_URL_BASE=${PLUGIN_CATALOG_OFFLINE_URL_BASE:=$PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}
   #calculated vars
   CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json"
+  CB_UPDATE_CENTER_URL_WITH_VERSION="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
   #cache some stuff locally, sure cache directory exists
   CURRENT_DIR=$(pwd)
