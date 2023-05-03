@@ -449,7 +449,7 @@ createPluginCatalogAndPluginsYaml() {
   fi
 
   #temporarily reformat each file to allow a proper yaml merge
-  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGINS_YAML_ORIG" > $TARGET_GEN/temp1.yaml
+  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGINS_YAML_ORIG_SANITIZED" > $TARGET_GEN/temp1.yaml
   yq e '.configurations[].includePlugins' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
 
   #merge our newly found dependencies from the calculated plugin-catalog.yaml into plugins.yaml
