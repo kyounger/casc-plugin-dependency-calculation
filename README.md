@@ -9,6 +9,9 @@ This means that as long as you are willing to use the plugin versions in the Clo
 
 ## New Features
 
+- improved plugin dependency management for more accurate `plugins.yaml`
+    - include optional dependencies per flag
+    - include bootstrap dependencies per flag
 - ability to run `exec-hooks` for plugin post-processing
 - ability to create air-gapped `plugin-catalog.yaml` files
 - rudimentary plugin-cache for holding plugins without an artifact repository manager
@@ -16,6 +19,7 @@ This means that as long as you are willing to use the plugin versions in the Clo
 ## Requirements
 
 * docker
+* awk
 * jq
 * yq (v4)
 * curl
@@ -35,6 +39,8 @@ Usage: run.sh -v <CI_VERSION> [OPTIONS]
                     script will have access env vars PNAME, PVERSION, PURL, PFILE
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
+    -i          Include optional dependencies in the plugins.yaml
+    -I          Include bootstrap dependencies in the plugins.yaml
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -V          Verbose logging (for debugging purposes)
     -r          Refresh the downloaded wars/jars (no-cache)

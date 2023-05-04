@@ -4,6 +4,8 @@ set -euo pipefail
 
 # Initialize our own variables:
 STDERR_LOG_SUFFIX='.stderr.log'
+INCLUDE_BOOTSTRAP=0
+INCLUDE_OPTIONAL=0
 DOWNLOAD=0
 VERBOSE_LOG=0
 REFRESH=0
@@ -29,6 +31,8 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
                     script will have access env vars PNAME, PVERSION, PURL, PFILE
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
+    -i          Include optional dependencies in the plugins.yaml
+    -I          Include bootstrap dependencies in the plugins.yaml
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -V          Verbose logging (for debugging purposes)
     -r          Refresh the downloaded wars/jars (no-cache)
@@ -46,7 +50,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts hv:xf:rRt:VdD:e: opt; do
+while getopts iIhv:xf:rRt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -65,6 +69,10 @@ while getopts hv:xf:rRt:VdD:e: opt; do
         e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
         f)  PLUGIN_YAML_PATH=$OPTARG
+            ;;
+        i)  INCLUDE_OPTIONAL=1
+            ;;
+        I)  INCLUDE_BOOTSTRAP=1
             ;;
         x)  INPLACE_UPDATE=1
             ;;
@@ -165,7 +173,7 @@ cacheUpdateCenter() {
 
 setScriptVars() {
   # prereqs
-  for tool in yq jq docker curl; do
+  for tool in yq jq docker curl awk; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
 
@@ -228,11 +236,17 @@ createTargetDirs() {
   # Set target files
   TARGET_DIR="${TARGET_BASE_DIR}/${CI_VERSION}/${CI_TYPE}"
   TARGET_GEN="${TARGET_DIR}/generated"
+
+  TARGET_PLUGIN_DEPS_PROCESSED="${TARGET_GEN}/deps-processed.txt"
+  TARGET_PLUGIN_DEPENDENCY_RESULTS="${TARGET_GEN}/processed-deps-results.yaml"
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
   TARGET_ALL="${TARGET_GEN}/pimt-with-plugins.yaml"
   TARGET_DIFF="${TARGET_GEN}/pimt-diff.yaml"
   TARGET_UC_OFFLINE="${TARGET_GEN}/update-center-offline.json"
   TARGET_UC_ONLINE="${TARGET_GEN}/update-center-online.json"
+  TARGET_OPTIONAL_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.optional.txt"
+  TARGET_REQUIRED_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.required.txt"
+  BOOTSTRAP=target/2.387.2.3/mm/generated/envelope.json.bootstrap.txt
   TARGET_PLATFORM_PLUGINS="${TARGET_GEN}/platform-plugins.json"
   TARGET_ENVELOPE="${TARGET_GEN}/envelope.json"
   TARGET_ENVELOPE_DIFF="${TARGET_GEN}/envelope.json.diff.txt"
@@ -306,6 +320,10 @@ copyOrExtractMetaInformation() {
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
   jq -r '.plugins[]|.name' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.plugins.all.txt"
+  jq -r '.plugins[]|"\(.name):\(.dependencies[]|select(.optional == false)|.name)"' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_REQUIRED_DEPS}"
+  jq -r '.plugins[]|"\(.name):\(.dependencies[]|select(.optional == true)|.name)"' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_OPTIONAL_DEPS}"
   jq -r '.envelope.plugins[]|"\(.artifactId):\(.version)"' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all-with-version.txt"
   jq -r '.plugins[]|"\(.name):\(.version)"' \
@@ -402,15 +420,69 @@ Summary:
 
   Difference between current vs new plugins.yaml
     diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
-    tail -vn 100 "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
+EOF
 
-  Difference between current vs new plugin-catalog.yaml
+  if [ -f "$TARGET_PLUGIN_CATALOG_ORIG" ]; then
+cat << EOF
+
+  Difference between current vs new plugin-catalog.yaml (if existed)
     diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
-    tail -vn 100 "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+EOF
+  fi
 
-  If '-d' was used, you can find the plugin-catalog-offline.yaml here
+  if [ -f "$TARGET_PLUGIN_CATALOG_OFFLINE" ]; then
+cat << EOF
+  You can find the plugin-catalog-offline.yaml here
     cat "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
 EOF
+  fi
+}
+
+processDeps() {
+    local p=$1
+    local indent="${2:-}"
+    if ! grep -qE "^$p$" "${TARGET_PLUGIN_DEPS_PROCESSED}"; then
+        debug "${indent}Plugin: $p"
+        # processed
+        echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
+        # bootstrap plugins
+        if grep -qE "^$p$" "${BOOTSTRAP}"; then
+            if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
+                debug "${indent}Result - add bootstrap: $p"
+                echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+            else
+                debug "${indent}Result - ignore: $p (already in bootstrap)"
+            fi
+        else
+            debug "${indent}Result - add non-bootstrap: $p"
+            echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+        fi
+        # process deps
+        for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
+            debug "${indent}  Dependency: $dep"
+            processDeps   "${dep}" "${indent}  "
+        done
+    else
+        debug "${indent}Plugin: $p (already processed)"
+    fi
+}
+
+processAllDeps() {
+  # empty the processed lists
+  echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED}"
+  echo "plugins:" > "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+
+  # optional deps?
+  [ $INCLUDE_OPTIONAL -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
+
+  # process deps
+  for p in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_ORIG_SANITIZED"); do
+      processDeps $p
+  done
 }
 
 createPluginCatalogAndPluginsYaml() {
@@ -448,12 +520,17 @@ createPluginCatalogAndPluginsYaml() {
     done
   fi
 
+  # process dependencies
+  processAllDeps
+
   #temporarily reformat each file to allow a proper yaml merge
+  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > $TARGET_GEN/temp0.yaml
   yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGINS_YAML_ORIG_SANITIZED" > $TARGET_GEN/temp1.yaml
   yq e '.configurations[].includePlugins' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
 
   #merge our newly found dependencies from the calculated plugin-catalog.yaml into plugins.yaml
-  yq ea 'select(fileIndex == 0) * select(fileIndex == 1) | keys | {"plugins": ([{"id": .[]}])}' \
+  yq ea 'select(fileIndex == 0) * select(fileIndex == 1) * select(fileIndex == 2) | keys | {"plugins": ([{"id": .[]}])}' \
+    "${TARGET_GEN}/temp0.yaml" \
     "${TARGET_GEN}/temp1.yaml" \
     "${TARGET_GEN}/temp2.yaml" \
     > "${TARGET_PLUGINS_YAML}" && rm "${TARGET_GEN}/temp"*
