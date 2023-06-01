@@ -246,7 +246,7 @@ createTargetDirs() {
   TARGET_UC_ONLINE="${TARGET_GEN}/update-center-online.json"
   TARGET_OPTIONAL_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.optional.txt"
   TARGET_REQUIRED_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.required.txt"
-  BOOTSTRAP=target/2.387.2.3/mm/generated/envelope.json.bootstrap.txt
+  TARGET_BOOTSTRAP="${TARGET_GEN}/envelope.json.bootstrap.txt"
   TARGET_PLATFORM_PLUGINS="${TARGET_GEN}/platform-plugins.json"
   TARGET_ENVELOPE="${TARGET_GEN}/envelope.json"
   TARGET_ENVELOPE_DIFF="${TARGET_GEN}/envelope.json.diff.txt"
@@ -450,7 +450,7 @@ processDeps() {
         # processed
         echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
         # bootstrap plugins
-        if grep -qE "^$p$" "${BOOTSTRAP}"; then
+        if grep -qE "^$p$" "${TARGET_BOOTSTRAP}"; then
             if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
                 debug "${indent}Result - add bootstrap: $p"
                 echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
