@@ -4,6 +4,7 @@ set -euo pipefail
 
 # Initialize our own variables:
 STDERR_LOG_SUFFIX='.stderr.log'
+CHECK_CVES=1
 INCLUDE_BOOTSTRAP=0
 INCLUDE_OPTIONAL=0
 DOWNLOAD=0
@@ -17,6 +18,7 @@ PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT='http://plugin-catalog/plugins/$PNAME/$PVERSION'
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
 PLUGIN_YAML_COMMENTS_STYLE=line
+JENKINS_UC_ACTUAL_URL='https://updates.jenkins.io/update-center.actual.json'
 
 show_help() {
 cat << EOF
@@ -32,17 +34,18 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -C FILE     Final target of the resulting plugin-catalog-offline.yaml
 
     -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
-    -D          Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
+    -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
                     defaults to $PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT
-    -e          Exec-hook - script to call when processing 3rd party plugins
+    -e FILE     Exec-hook - script to call when processing 3rd party plugins
                     script will have access env vars PNAME, PVERSION, PURL, PFILE
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
 
     -i          Include optional dependencies in the plugins.yaml
     -I          Include bootstrap dependencies in the plugins.yaml
-    -m          Include plugin metadata as comment (line, header, footer, none)
+    -m STYLE    Include plugin metadata as comment (line, header, footer, none)
                     defaults to '$PLUGIN_YAML_COMMENTS_STYLE'
+    -S          Disable CVE check against plugins (added to metadata)
 
     -r          Refresh the downloaded wars/jars (no-cache)
     -R          Refresh the downloaded update center jsons (no-cache)
@@ -62,7 +65,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts iIhv:xf:F:c:C:m:rRt:VdD:e: opt; do
+while getopts iIhv:xf:F:c:C:m:rRSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -97,6 +100,8 @@ while getopts iIhv:xf:F:c:C:m:rRt:VdD:e: opt; do
         r)  REFRESH=1
             ;;
         R)  REFRESH_UC=1
+            ;;
+        S)  CHECK_CVES=0
             ;;
         x)  INPLACE_UPDATE=1
             ;;
@@ -270,8 +275,11 @@ createTargetDirs() {
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
   TARGET_ALL="${TARGET_GEN}/pimt-with-plugins.yaml"
   TARGET_DIFF="${TARGET_GEN}/pimt-diff.yaml"
+  TARGET_UC_ACTUAL="${TARGET_GEN}/update-center.actual.json"
+  TARGET_UC_ACTUAL_WARNINGS="${TARGET_UC_ACTUAL}.plugins.warnings.json"
   TARGET_UC_OFFLINE="${TARGET_GEN}/update-center-offline.json"
   TARGET_UC_ONLINE="${TARGET_GEN}/update-center-online.json"
+  TARGET_UC_ONLINE_ALL_WITH_VERSION="${TARGET_UC_ONLINE}.plugins.all-with-version.txt"
   TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS="${TARGET_UC_ONLINE}.tier.3rd-party.txt"
   TARGET_UC_ONLINE_DEPRECATED_PLUGINS="${TARGET_UC_ONLINE}.deprecated.txt"
   TARGET_OPTIONAL_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.optional.txt"
@@ -359,7 +367,7 @@ copyOrExtractMetaInformation() {
   jq -r '.envelope.plugins[]|"\(.artifactId):\(.version)"' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all-with-version.txt"
   jq -r '.plugins[]|"\(.name):\(.version)"' \
-    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.plugins.all-with-version.txt"
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_ALL_WITH_VERSION}"
   jq -r '.envelope.plugins[]|select(.tier|test("(compatible)"))|.artifactId' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.compatible.txt"
   jq -r '.envelope.plugins[]|select(.tier|test("(proprietary)"))|.artifactId' \
@@ -412,6 +420,7 @@ createPluginListsWithPIMT() {
     -jar $PIMT_JAR_CACHE_FILE \
     --war $WAR_CACHE_FILE \
     --list \
+    --view-security-warnings \
     $PIMT_DOWNLOAD \
     --jenkins-version $CI_VERSION \
     --output YAML \
@@ -430,7 +439,7 @@ createPluginListsWithPIMT() {
   # NOTE: if you don't specify the plugin versions, it will try to process the latest
   local LIST_OF_PLUGINS_WITH_VERSIONS=
   for p in $LIST_OF_PLUGINS; do
-    LIST_OF_PLUGINS_WITH_VERSIONS="${LIST_OF_PLUGINS_WITH_VERSIONS} $(grep "^$p:.*$" "${TARGET_UC_ONLINE}.plugins.all-with-version.txt")"
+    LIST_OF_PLUGINS_WITH_VERSIONS="${LIST_OF_PLUGINS_WITH_VERSIONS} $(grep "^$p:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}")"
   done
   if java "${PIMT_OPTIONS[@]}" --plugins $(echo "$LIST_OF_PLUGINS_WITH_VERSIONS" | xargs) > "${TARGET_ALL}" 2> "${TARGET_ALL}${STDERR_LOG_SUFFIX}"; then
     debug "$(cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}")"
@@ -488,6 +497,33 @@ isBootstrapPlugin() {
 
 isDeprecatedPlugin() {
   grep -qE "^$1$" "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
+}
+
+isNotAffectedByCVE() {
+  if [ $CHECK_CVES -eq 1 ]; then
+    # retrieve actual json if needed
+    if [ ! -f "${TARGET_UC_ACTUAL}" ]; then
+      curl --fail -sSL -o "${TARGET_UC_ACTUAL}" "$JENKINS_UC_ACTUAL_URL"
+      jq '.warnings[]|select(.type == "plugin")' "${TARGET_UC_ACTUAL}" > "${TARGET_UC_ACTUAL_WARNINGS}"
+    fi
+    # create plugin specific warning json
+    local pWarnings="${TARGET_UC_ACTUAL_WARNINGS}.${1}.json"
+    jq --arg p "$1" 'select(.name == $p)' "${TARGET_UC_ACTUAL_WARNINGS}" > "${pWarnings}"
+    # go through each security warning
+    local pluginVersion=''
+    pluginVersion=$(grep "^$1:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d':' -f 2)
+    for w in $(jq -r '.id' "${pWarnings}"); do
+      debug "Plugin '$1' - checking security issue '$w'"
+      for pattern in $(jq --arg w "$w" 'select(.id == $w).versions[].pattern' "${TARGET_UC_ACTUAL_WARNINGS}"); do
+        debug "Plugin '$1' - testing version '$pluginVersion' against pattern '$pattern' from file '$pWarnings'"
+        patternNoQuotes=
+        if [[ "$pluginVersion" =~ ^${pattern//\"/}$ ]]; then
+          info "Plugin '$1' - affected according to pattern '$pattern' from file '$(basename $pWarnings)'"
+          return 1
+        fi
+      done
+    done
+  fi
 }
 
 isDependency() {
@@ -600,11 +636,16 @@ createPluginCatalogAndPluginsYaml() {
   yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML}"
   yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG}"
 
+  # Add metadata comments
   if [ -n "${PLUGIN_YAML_COMMENTS_STYLE}" ]; then
     # Header...
     case "${PLUGIN_YAML_COMMENTS_STYLE}" in
         header|footer|line)
-          yq -i '. head_comment="This file is automatically generated - please do not edit manually.\n\nPlugin Categories:\n cap - is this a CAP plugin\n 3rd - is this a 3rd party plugin\n old - is this a deprecated plugin\n bst - installed by default\n dep - installed as dependency\n lst - installed because it was listed"' "$TARGET_PLUGINS_YAML"
+          if [ $CHECK_CVES -eq 1 ]; then
+            yq -i '. head_comment="This file is automatically generated - please do not edit manually.\n\nPlugin Categories:\n cap - is this a CAP plugin\n 3rd - is this a 3rd party plugin\n old - is this a deprecated plugin\n cve - are there open security issues?\n bst - installed by default\n dep - installed as dependency\n lst - installed because it was listed"' "$TARGET_PLUGINS_YAML"
+          else
+            yq -i '. head_comment="This file is automatically generated - please do not edit manually.\n\nPlugin Categories:\n cap - is this a CAP plugin\n 3rd - is this a 3rd party plugin\n old - is this a deprecated plugin\n bst - installed by default\n dep - installed as dependency\n lst - installed because it was listed"' "$TARGET_PLUGINS_YAML"
+          fi
           ;;
         none)
           info "Comments style = none. Not setting comments."
@@ -622,6 +663,7 @@ createPluginCatalogAndPluginsYaml() {
       isBootstrapPlugin "$p" && pStr="${pStr} bst"
       isDependency "$p" && pStr="${pStr} dep"
       isDeprecatedPlugin "$p" && pStr="${pStr} old"
+      isNotAffectedByCVE "$p" || pStr="${pStr} cve"
       case "${PLUGIN_YAML_COMMENTS_STYLE}" in
           header)
             p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) head_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
