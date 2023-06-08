@@ -9,6 +9,8 @@ This means that as long as you are willing to use the plugin versions in the Clo
 
 ## New Features
 
+- option to include metadata as a comment in the `plugins.yaml`
+- option to set specific target locations for final files
 - improved plugin dependency management for more accurate `plugins.yaml`
     - include optional dependencies per flag
     - include bootstrap dependencies per flag
@@ -31,21 +33,31 @@ Usage: run.sh -v <CI_VERSION> [OPTIONS]
 
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file
+    -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -t          The instance type (oc, oc-traditional, cm, mm)
+
+    -F FILE     Final target of the resulting plugins.yaml
+    -c FILE     Final target of the resulting plugin-catalog.yaml
+    -C FILE     Final target of the resulting plugin-catalog-offline.yaml
+
     -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
     -D          Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
-                    defaults to $PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT
+                    defaults to http://plugin-catalog/plugins/$PNAME/$PVERSION
     -e          Exec-hook - script to call when processing 3rd party plugins
                     script will have access env vars PNAME, PVERSION, PURL, PFILE
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
+
     -i          Include optional dependencies in the plugins.yaml
     -I          Include bootstrap dependencies in the plugins.yaml
-    -v          The version of CloudBees CI (e.g. 2.263.4.2)
-    -V          Verbose logging (for debugging purposes)
+    -m          Include plugin metadata as comment (line, header, footer, none)
+                    defaults to 'line'
+
     -r          Refresh the downloaded wars/jars (no-cache)
     -R          Refresh the downloaded update center jsons (no-cache)
+    -V          Verbose logging (for debugging purposes)
     -x          Inplace-update of plugins.yaml and plugin-catalog.yaml
+                    (DEPRECATED - please use final target options instead)
 ```
 
 ## Examples
