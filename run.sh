@@ -148,13 +148,13 @@ cachePimtJar() {
   PIMT_INFO_JSON=$(curl --fail -sL \
     -H "Accept: application/vnd.github.v3+json" \
     https://api.github.com/repos/jenkinsci/plugin-installation-manager-tool/releases/latest)
-  PIMT_JAR_FILE=$(echo $PIMT_INFO_JSON | yq e '.assets[0].name' -)
-  PIMT_JAR_URL=$(echo $PIMT_INFO_JSON | yq e '.assets[0].browser_download_url' -)
+  PIMT_JAR_FILE=$(echo "$PIMT_INFO_JSON" | yq e '.assets[0].name' -)
+  PIMT_JAR_URL=$(echo "$PIMT_INFO_JSON" | yq e '.assets[0].browser_download_url' -)
   PIMT_JAR_CACHE_FILE="$PIMT_JAR_CACHE_DIR/$PIMT_JAR_FILE"
 
   #download pimt jar file and cache it
-  if [[ -f $PIMT_JAR_CACHE_FILE ]] && [ $REFRESH -eq 0 ]; then
-    info "$(basename $PIMT_JAR_CACHE_FILE) already exist, remove it or use the '-r' flag" >&2
+  if [[ -f "$PIMT_JAR_CACHE_FILE" ]] && [ $REFRESH -eq 0 ]; then
+    info "$(basename "$PIMT_JAR_CACHE_FILE") already exist, remove it or use the '-r' flag" >&2
   else
     curl --fail -sSL -o "$PIMT_JAR_CACHE_FILE" $PIMT_JAR_URL
   fi
@@ -198,7 +198,7 @@ cacheUpdateCenter() {
 
 setScriptVars() {
   # prereqs
-  for tool in yq jq docker curl awk; do
+  for tool in yq jq curl awk; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
 
@@ -210,6 +210,7 @@ setScriptVars() {
   if [ $DOWNLOAD -eq 0 ] && [ -n "${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}" ]; then
     die "The offline catalog target can only be set together with the '-d' download option."
   fi
+  [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
 
   # type based vars
   CB_DOWNLOADS_URL="https://downloads.cloudbees.com/cloudbees-core/traditional"
@@ -277,7 +278,7 @@ createTargetDirs() {
   TARGET_DIFF="${TARGET_GEN}/pimt-diff.yaml"
   TARGET_UC_ACTUAL="${TARGET_GEN}/update-center.actual.json"
   TARGET_UC_ACTUAL_WARNINGS="${TARGET_UC_ACTUAL}.plugins.warnings.json"
-  TARGET_UC_OFFLINE="${TARGET_GEN}/update-center-offline.json"
+  # TARGET_UC_OFFLINE="${TARGET_GEN}/update-center-offline.json"
   TARGET_UC_ONLINE="${TARGET_GEN}/update-center-online.json"
   TARGET_UC_ONLINE_ALL_WITH_VERSION="${TARGET_UC_ONLINE}.plugins.all-with-version.txt"
   TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS="${TARGET_UC_ONLINE}.tier.3rd-party.txt"
@@ -324,22 +325,22 @@ copyOrExtractMetaInformation() {
 
   # copy meta data json files
   cp "${PLUGIN_YAML_PATH}" "${TARGET_DIR}/"
-  unzip -p "${WAR_CACHE_FILE}" WEB-INF/plugins/envelope.json > "${TARGET_ENVELOPE}"
-  unzip -p "${WAR_CACHE_FILE}" WEB-INF/plugins/platform-plugins.json > "${TARGET_PLATFORM_PLUGINS}"
-  extractAndFormat "${WAR_CACHE_DIR}/update-center.json" > "${TARGET_UC_OFFLINE}"
+  # unzip -p "${WAR_CACHE_FILE}" WEB-INF/plugins/envelope.json > "${TARGET_ENVELOPE}"
+  # unzip -p "${WAR_CACHE_FILE}" WEB-INF/plugins/platform-plugins.json > "${TARGET_PLATFORM_PLUGINS}"
+  # extractAndFormat "${WAR_CACHE_DIR}/update-center.json" > "${TARGET_UC_OFFLINE}"
   extractAndFormat "${CB_UPDATE_CENTER_CACHE_FILE}" > "${TARGET_UC_ONLINE}"
 
   # check envelope.json from war against envelope.json from update center
-  if diff -q <(jq '.envelope' "${TARGET_UC_ONLINE}") <(jq '.' "${TARGET_ENVELOPE}") > "${TARGET_ENVELOPE_DIFF}"; then
-    info "No differences found in envelope.json from war vs online update-center."
-  elif [ $? -eq 1 ]; then
-    warn "Differences found in envelope.json from war vs online update-center. See ${TARGET_ENVELOPE_DIFF}"
-  else
-    die "Something went wrong. See above..."
-  fi
+  # if diff -q <(jq '.envelope' "${TARGET_UC_ONLINE}") <(jq '.' "${TARGET_ENVELOPE}") > "${TARGET_ENVELOPE_DIFF}"; then
+  #   info "No differences found in envelope.json from war vs online update-center."
+  # elif [ $? -eq 1 ]; then
+  #   warn "Differences found in envelope.json from war vs online update-center. See ${TARGET_ENVELOPE_DIFF}"
+  # else
+  #   die "Something went wrong. See above..."
+  # fi
 
   # extract online envelope json
-  jq '.envelope' "${TARGET_UC_ONLINE}" > "${TARGET_UC_ONLINE}.envelope.json"
+  jq '.envelope' "${TARGET_UC_ONLINE}" > "${TARGET_ENVELOPE}"
 
   # create some info lists from the envelope
   jq -r '.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
@@ -380,31 +381,31 @@ copyOrExtractMetaInformation() {
     > "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"
 
   # create some info lists from the platform-plugins
-  jq -r '.[].plugins[]|select(.suggested != null)|.name' \
-    "${TARGET_GEN}/platform-plugins.json" | sort > "${TARGET_GEN}/platform-plugins.json.wizard-non-suggested.txt"
-  jq -r '.[].plugins[]|select(.suggested == null)|.name' \
-    "${TARGET_GEN}/platform-plugins.json" | sort > "${TARGET_GEN}/platform-plugins.json.wizard-suggested.txt"
-  jq -r '.[].plugins[]|.name' \
-    "${TARGET_GEN}/platform-plugins.json" | sort > "${TARGET_GEN}/platform-plugins.json.wizard-all.txt"
+  # jq -r '.[].plugins[]|select(.suggested != null)|.name' \
+  #   "${TARGET_GEN}/platform-plugins.json" | sort > "${TARGET_GEN}/platform-plugins.json.wizard-non-suggested.txt"
+  # jq -r '.[].plugins[]|select(.suggested == null)|.name' \
+  #   "${TARGET_GEN}/platform-plugins.json" | sort > "${TARGET_GEN}/platform-plugins.json.wizard-suggested.txt"
+  # jq -r '.[].plugins[]|.name' \
+  #   "${TARGET_GEN}/platform-plugins.json" | sort > "${TARGET_GEN}/platform-plugins.json.wizard-all.txt"
 }
 
 staticCheckOfRequiredPlugins() {
   # Static check: loop through plugins and ensure they exist in the downloaded update-center
-  debug "Plugins in ${TARGET_UC_OFFLINE}:"
-  debug "$(jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | sort)"
+  # debug "Plugins in ${TARGET_UC_OFFLINE}:"
+  # debug "$(jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | sort)"
   debug "Plugins in ${TARGET_UC_ONLINE}:"
   debug "$(jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | sort)"
   PLUGINS_MISSING_OFFLINE=''
   PLUGINS_MISSING_ONLINE=''
   for p in $LIST_OF_PLUGINS; do
     # do not use 'grep -q' to avoid the "The Infamous SIGPIPE Signal" http://www.tldp.org/LDP/lpg/node20.html
-    jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | grep -E "^${p}$" &> /dev/null \
-    || { [ $? -eq 1 ] && PLUGINS_MISSING_OFFLINE="${PLUGINS_MISSING_OFFLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
+    # jq -r '.plugins[].name' "${TARGET_UC_OFFLINE}" | grep -E "^${p}$" &> /dev/null \
+    # || { [ $? -eq 1 ] && PLUGINS_MISSING_OFFLINE="${PLUGINS_MISSING_OFFLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
     jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | grep -E "^${p}$" &> /dev/null \
     || { [ $? -eq 1 ] && PLUGINS_MISSING_ONLINE="${PLUGINS_MISSING_ONLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
   done
   [ -z "${PLUGINS_MISSING_ONLINE}" ] || die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
-  [ -z "${PLUGINS_MISSING_OFFLINE}" ] || warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
+  # [ -z "${PLUGINS_MISSING_OFFLINE}" ] || warn "PLUGINS_MISSING_OFFLINE:${PLUGINS_MISSING_OFFLINE}"
 }
 
 createPluginListsWithPIMT() {
@@ -416,9 +417,10 @@ createPluginListsWithPIMT() {
   [ $VERBOSE_LOG -eq 0 ] && PIMT_VERBOSE= || PIMT_VERBOSE=--verbose
   [ $DOWNLOAD -eq 0 ] && PIMT_DOWNLOAD=--no-download || PIMT_DOWNLOAD="-d $TARGET_PLUGINS_DIR"
 
+    # --war $WAR_CACHE_FILE \
+
   PIMT_OPTIONS=(
     -jar $PIMT_JAR_CACHE_FILE \
-    --war $WAR_CACHE_FILE \
     --list \
     --view-security-warnings \
     $PIMT_DOWNLOAD \
@@ -448,11 +450,16 @@ createPluginListsWithPIMT() {
     die "Couldn't create list of plugins. See above."
   fi
 
-  info "Generating diff (${TARGET_DIFF})"
+  info "Generating diff by removing all bundled plugins (${TARGET_DIFF})"
   cp "${TARGET_ALL}" "${TARGET_DIFF}"
-  for k in $(yq '.plugins[].artifactId' "${TARGET_NONE}"); do
+  for k in $(cat "${TARGET_ENVELOPE_ALL_CAP}"); do
     k=$k yq -i 'del(.plugins[] | select(.artifactId == env(k)))' "${TARGET_DIFF}"
   done
+  # sanitise pimt result files
+  yq -i '.plugins|=sort_by(.artifactId)|... comments=""' "${TARGET_NONE}"
+  yq -i '.plugins|=sort_by(.artifactId)|... comments=""' "${TARGET_ALL}"
+  yq -i '.plugins|=sort_by(.artifactId)|... comments=""' "${TARGET_DIFF}"
+
 }
 
 showSummaryResult() {
@@ -603,7 +610,8 @@ createPluginCatalogAndPluginsYaml() {
       pluginSrc="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
       pluginFile=$(basename "${pluginSrc}")
       pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginFile}"
-      pluginUrl=$(PNAME="${pluginName}" PVERSION="${pluginVersion}" envsubst <<< "${PLUGIN_CATALOG_OFFLINE_URL_BASE}/${pluginFile}")
+      # pluginUrl=$(PNAME="${pluginName}" PVERSION="${pluginVersion}" envsubst <<< "${PLUGIN_CATALOG_OFFLINE_URL_BASE}/${pluginFile}")
+      pluginUrl=$(PNAME="${pluginName}" PVERSION="${pluginVersion}" eval "echo \"${PLUGIN_CATALOG_OFFLINE_URL_BASE}/${pluginFile}\" 2> /dev/null")
       # Copy to cache...
       mkdir -p $(dirname "${pluginDest}")
       info "Copying plugin from ${pluginSrc} -> ${pluginDest}"
@@ -697,7 +705,7 @@ createPluginCatalogAndPluginsYaml() {
 # main
 setScriptVars
 cachePimtJar
-cacheWarFile
+#cacheWarFile
 cacheUpdateCenter
 createTargetDirs
 copyOrExtractMetaInformation
