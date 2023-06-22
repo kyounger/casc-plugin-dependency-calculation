@@ -14,6 +14,8 @@ REFRESH_UC=0
 INPLACE_UPDATE=0
 CI_VERSION=
 CI_TYPE=mm
+PLUGIN_YAML_PATHS_FILES=()
+PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
 PLUGIN_YAML_COMMENTS_STYLE=line
@@ -83,7 +85,8 @@ while getopts iIhv:xf:F:c:C:m:rRSt:VdD:e: opt; do
             ;;
         e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
-        f)  PLUGIN_YAML_PATH=$OPTARG
+        f)  PLUGIN_YAML_PATHS_FILES[$PLUGIN_YAML_PATHS_IDX]=$OPTARG
+            PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
         F)  FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
             ;;
@@ -184,7 +187,6 @@ setScriptVars() {
   if [ $DOWNLOAD -eq 0 ] && [ -n "${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}" ]; then
     die "The offline catalog target can only be set together with the '-d' download option."
   fi
-  [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
   [[ "$CI_TYPE" =~ ^mm|oc|cm|oc-traditional$ ]] || die "CI_TYPE '${CI_TYPE}' not recognised"
 
 
@@ -211,10 +213,29 @@ setScriptVars() {
   FINAL_TARGET_PLUGIN_CATALOG="${FINAL_TARGET_PLUGIN_CATALOG:-}"
   FINAL_TARGET_PLUGIN_CATALOG_OFFLINE="${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}"
 
+  # check for multiple source files
+  if [ ${#PLUGIN_YAML_PATHS_FILES[@]} -eq 0 ]; then
+    info "Using the default file '$PLUGIN_YAML_PATH'."
+  elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -eq 1 ]; then
+    PLUGIN_YAML_PATH="${PLUGIN_YAML_PATHS_FILES[0]}"
+    info "Using the single file '$PLUGIN_YAML_PATH'."
+  elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -gt 1 ]; then
+    PLUGIN_YAML_PATH=$(mktemp)
+    info "Multiple source files passed. Creating temporary plugins.yaml file '$PLUGIN_YAML_PATH'."
+    for i in $(echo ${!PLUGIN_YAML_PATHS_FILES[@]}); do
+      tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${PLUGIN_YAML_PATHS_FILES[$i]}")
+      echo "$tmpStr" > "$PLUGIN_YAML_PATH"
+    done
+  fi
+  # sanity checks
+  [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
+  info "Sanity checking '$PLUGIN_YAML_PATH' for duplicates."
+  diff <(yq '.plugins|sort_by(.id)' "$PLUGIN_YAML_PATH") <(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") || \
+    die "Please remove the duplicates above before continuing"
+
   #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
-  LIST_OF_PLUGINS=$(yq '.plugins[].id ' $PLUGIN_YAML_PATH | xargs)
-  PLUGIN_YAML_DIR=$(dirname $PLUGIN_YAML_PATH)
-  PLUGIN_CATALOG_PATH=$(dirname $PLUGIN_YAML_PATH)/plugin-catalog.yaml
+  LIST_OF_PLUGINS=$(yq '.plugins[].id ' "$PLUGIN_YAML_PATH" | xargs)
+  PLUGIN_CATALOG_PATH=$(dirname "$PLUGIN_YAML_PATH")/plugin-catalog.yaml
 }
 
 createTargetDirs() {
