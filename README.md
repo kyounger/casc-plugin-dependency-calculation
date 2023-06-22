@@ -50,11 +50,11 @@ Otherwise it is strongly recommended to use the new version.
 
 ## Requirements
 
-* docker (only for the v0.x branch)
-* awk
-* jq
-* yq (v4)
-* curl
+- docker (only for the v0.x branch)
+- awk
+- jq
+- yq (v4)
+- curl
 
 ## Usage
 
