@@ -1,4 +1,4 @@
-# CloudBees CasC Plugin Catalog and Transitive Depedencies Calculator
+# CloudBees CasC Plugin Catalog and Transitive Dependencies Calculator
 
 Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (any tier), and it will:
 
@@ -6,6 +6,36 @@ Give this script a path to a `plugins.yaml` file in a bundle with all plugins yo
 2. Update the `plugins.yaml` file you originally specifed with the additional transitive dependencies.
 
 This means that as long as you are willing to use the plugin versions in the CloudBees Update Centers (which you should be doing), then all you ever need to do is add plugins to the `plugins.yaml` file and this script will handle the rest. No more manually crafting plugin catalogs!
+
+## :information_source: Upcoming removal of war file and docker dependency
+
+This branch will soon use an updated version of the `run.sh` script which no longer uses the war file. The last release including this will be `v1.0.0`.
+
+Removal of the war file dependency brings a number of advantages:
+
+- less network bandwidth
+    - no need to download the docker image for modern installations
+    - no need to download the war file for traditional installations
+- reduced execution time
+- easier to integrate into pipelines since the dependency on docker has been removed
+
+### Changes versus the old method
+
+There are no changes in the resulting `plugins.yaml`, `plugin-catalog.yaml`, or `plugin-catalog-offline.yaml` files.
+
+However, since the war file is no longer available, the meta information regarding the "Initial installation wizard" where the option "Install suggested" is given, for example:
+
+```sh
+❯ ls -1 target/2.387.2.4/mm/generated/platform-plugins.json*
+target/2.387.2.4/mm/generated/platform-plugins.json
+target/2.387.2.4/mm/generated/platform-plugins.json.wizard-all.txt
+target/2.387.2.4/mm/generated/platform-plugins.json.wizard-non-suggested.txt
+target/2.387.2.4/mm/generated/platform-plugins.json.wizard-suggested.txt
+```
+
+If it is still needed in the current development, please create an issue to reinstate the option to use the war file.
+
+Otherwise it is strongly recommended to use the new version.
 
 ## New Features
 
@@ -20,7 +50,7 @@ This means that as long as you are willing to use the plugin versions in the Clo
 
 ## Requirements
 
-* docker
+* docker (only for the v0.x branch)
 * awk
 * jq
 * yq (v4)
