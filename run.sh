@@ -161,6 +161,7 @@ cachePimtJar() {
   if [[ -f "$PIMT_JAR_CACHE_FILE" ]] && [ $REFRESH -eq 0 ]; then
     info "$(basename "$PIMT_JAR_CACHE_FILE") already exist, remove it or use the '-r' flag" >&2
   else
+    info "Caching PIMT JAR to '$PIMT_JAR_CACHE_FILE'"
     curl --fail -sSL -o "$PIMT_JAR_CACHE_FILE" $PIMT_JAR_URL
   fi
 }
@@ -170,8 +171,9 @@ cacheUpdateCenter() {
   if [[ -f "${CB_UPDATE_CENTER_CACHE_FILE}" ]] && [ $REFRESH_UC -eq 0 ]; then
     info "$(basename ${CB_UPDATE_CENTER_CACHE_FILE}) already exist, remove it or use the '-R' flag" >&2
   else
+    info "Caching UC to '$CB_UPDATE_CENTER_CACHE_FILE'"
     mkdir -p $CB_UPDATE_CENTER_CACHE_DIR
-    curl --fail -sSL "${CB_UPDATE_CENTER_URL_WITH_VERSION}" > "${CB_UPDATE_CENTER_CACHE_FILE}"
+    curl --fail -sSL -o "${CB_UPDATE_CENTER_CACHE_FILE}" "${CB_UPDATE_CENTER_URL_WITH_VERSION}"
   fi
 }
 
@@ -211,7 +213,8 @@ setScriptVars() {
 
   #cache some stuff locally, sure cache directory exists
   CURRENT_DIR=$(pwd)
-  CACHE_BASE_DIR="${CACHE_BASE_DIR:="$(pwd)/.cache"}"
+  CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
+  info "Setting CACHE_BASE_DIR=$CACHE_BASE_DIR"
   CB_UPDATE_CENTER_CACHE_DIR="$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/update-center"
   CB_UPDATE_CENTER_CACHE_FILE="${CB_UPDATE_CENTER_CACHE_DIR}/update-center.json"
   PIMT_JAR_CACHE_DIR="$CACHE_BASE_DIR/pimt-jar"
