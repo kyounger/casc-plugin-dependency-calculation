@@ -186,6 +186,7 @@ setScriptVars() {
   # default to latest CI Version if not set
   if [ -z "${CI_VERSION:-}" ]; then
     info "CI_VERSION not set. Determining latest version..."
+    mkdir -p "${TARGET_BASE_DIR}"
     CB_HELM_REPO_INDEX="${TARGET_BASE_DIR}/helm-chart.index.yaml"
     curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}"
     LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
