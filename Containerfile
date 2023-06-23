@@ -6,4 +6,3 @@ RUN useradd casc-user -ms /bin/bash
 USER casc-user
 WORKDIR /home/casc-user
 COPY --chown=casc-user run.sh run.sh
-COPY --chown=casc-user tests tests
