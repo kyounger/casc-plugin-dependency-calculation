@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
 env:
   TEST_TAG: local:test
 jobs:
@@ -14,17 +17,20 @@ jobs:
       - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
       - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
       - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
+      -
+        name: Check out repository code
         uses: actions/checkout@v3
       - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
       - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: Build Docker image
+      -
+        name: Build Docker image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
           file: Containerfile
           load: true
           tags: ${{ env.TEST_TAG }}
-      - name: Run tests
-        run: docker run --rm -v $(pwd):$(pwd) -w $(pwd) -it ${{ env.TEST_TAG }} ./tests/run.sh
+      -
+        name: Run tests
+        run: docker run --rm -v $(pwd):$(pwd) -w $(pwd) ${{ env.TEST_TAG }} ./tests/run.sh
       - run: echo "🍏 This job's status is ${{ job.status }}."
