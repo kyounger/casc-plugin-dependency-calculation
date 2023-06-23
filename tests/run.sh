@@ -35,7 +35,7 @@ for d in $(find $SCRIPT_DIR -mindepth 1 -maxdepth 1 -type d); do
     [ -f "${expectedPluginCatalog}" ] || die "Expected file '$expectedPluginCatalog' doesn't exist."
     [ -f "${expectedPluginCatalogOffline}" ] || die "Expected file '$expectedPluginCatalogOffline' doesn't exist."
 
-    $RUN_CMD -V -v "$VERSION" -t "$TYPE" -d \
+    $RUN_CMD -v "$VERSION" -t "$TYPE" -d \
          -f "${sourceYaml}" \
          -F "${actualPluginsYaml}" \
          -c "${actualPluginCatalog}" \
