@@ -35,5 +35,5 @@ jobs:
           tags: ${{ env.TEST_TAG }}
       -
         name: Run tests
-        run: docker run --rm -v $(pwd):$(pwd) -w $(pwd) ${{ env.TEST_TAG }} ./tests/run.sh
+        run: docker run -u$(id -u):$(id -g) --rm -v $(pwd):$(pwd) -w $(pwd) ${{ env.TEST_TAG }} ./tests/run.sh
       - run: echo "🍏 This job's status is ${{ job.status }}."
