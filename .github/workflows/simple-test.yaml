@@ -2,6 +2,9 @@ name: Test the plugin dependency script
 run-name: ${{ github.actor }} is testing the script 🚀
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
 jobs:
   Simple-Test:
     runs-on: ubuntu-latest
@@ -16,5 +19,5 @@ jobs:
       - name: Build docker images
         run: docker build -t local -f Containerfile .
       - name: Run tests
-        run: docker run -it local ./tests/run.sh
+        run: docker run -v $(pwd):$(pwd) -w $(pwd) -it local ./tests/run.sh
       - run: echo "🍏 This job's status is ${{ job.status }}."
