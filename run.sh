@@ -377,7 +377,7 @@ createPluginListsWithPIMT() {
   [ $DOWNLOAD -eq 0 ] && PIMT_DOWNLOAD=--no-download || PIMT_DOWNLOAD="-d $TARGET_PLUGINS_DIR"
 
   PIMT_OPTIONS=(
-    -jar $PIMT_JAR_CACHE_FILE \
+    -jar "$PIMT_JAR_CACHE_FILE" \
     --list \
     --view-security-warnings \
     $PIMT_DOWNLOAD \
@@ -387,6 +387,7 @@ createPluginListsWithPIMT() {
     $PIMT_VERBOSE)
 
   info "Getting default plugins list (${TARGET_NONE})"
+  info "Running command... java ${PIMT_OPTIONS[@]}"
   if java "${PIMT_OPTIONS[@]}" > "${TARGET_NONE}" 2> "${TARGET_NONE}${STDERR_LOG_SUFFIX}"; then
     debug "$(cat "${TARGET_NONE}${STDERR_LOG_SUFFIX}")"
   else
