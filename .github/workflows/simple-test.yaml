@@ -10,7 +10,6 @@ on:
       - master
 env:
   TEST_TAG: local:test
-  CACHE_BASE_DIR: /tmp
 jobs:
   Simple-Test:
     runs-on: ubuntu-latest
