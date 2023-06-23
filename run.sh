@@ -19,6 +19,8 @@ PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
 PLUGIN_YAML_COMMENTS_STYLE=line
+TARGET_BASE_DIR=${TARGET_BASE_DIR:="$(pwd)/target"}
+CB_HELM_REPO_URL=https://public-charts.artifacts.cloudbees.com/repository/public/index.yaml
 JENKINS_UC_ACTUAL_URL='https://updates.jenkins.io/update-center.actual.json'
 
 show_help() {
@@ -179,6 +181,16 @@ setScriptVars() {
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
 
+  # default to latest CI Version if not set
+  if [ -z "${CI_VERSION:-}" ]; then
+    info "CI_VERSION not set. Determining latest version..."
+    CB_HELM_REPO_INDEX="${TARGET_BASE_DIR}/helm-chart.index.yaml"
+    curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}"
+    LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
+    CI_VERSION=$(cv=$LATEST_CHART_VERSION yq '.entries.cloudbees-core[]|select(.version == env(cv)).appVersion' "${CB_HELM_REPO_INDEX}")
+  fi
+  [ -n "${CI_VERSION:-}" ] && info "CI_VERSION set to '$CI_VERSION'." || die "CI_VERSION was empty."
+
   # some general sanity checks
   if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}" ]; then
     [ -f "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be a file"
@@ -204,9 +216,6 @@ setScriptVars() {
   CB_UPDATE_CENTER_CACHE_FILE="${CB_UPDATE_CENTER_CACHE_DIR}/update-center.json"
   PIMT_JAR_CACHE_DIR="$CACHE_BASE_DIR/pimt-jar"
   PLUGINS_CACHE_DIR="$CACHE_BASE_DIR/plugins"
-
-  # target base dir
-  TARGET_BASE_DIR=${TARGET_BASE_DIR:="$(pwd)/target"}
 
   # final location stuff
   FINAL_TARGET_PLUGIN_YAML_PATH="${FINAL_TARGET_PLUGIN_YAML_PATH:-}"
@@ -408,25 +417,12 @@ createPluginListsWithPIMT() {
 }
 
 showSummaryResult() {
-  if [ $DOWNLOAD -eq 0 ]; then
-cat << EOF
-Summary:
-
-  See the new files:
-    yq  "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
-
-EOF
-  else
 cat << EOF
 Summary:
 
   See the new files:
     yq  "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
 
-EOF
-  fi
-
-cat << EOF
   Difference between current vs new plugins.yaml
     diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}"
 EOF
@@ -603,6 +599,11 @@ createPluginCatalogAndPluginsYaml() {
   yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG}"
   cp "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_SANITIZED}"
 
+  # Add version to catalogs
+  info "Setting version of the plugin catalogs to CI_VERSION for transparency"
+  CI_VERSION=$CI_VERSION yq -i '.version = env(CI_VERSION)' "$TARGET_PLUGIN_CATALOG"
+  CI_VERSION=$CI_VERSION yq -i '.version = env(CI_VERSION)' "$TARGET_PLUGIN_CATALOG_OFFLINE"
+
   # Add metadata comments
   if [ -n "${PLUGIN_YAML_COMMENTS_STYLE}" ]; then
     # Header...
@@ -642,7 +643,6 @@ createPluginCatalogAndPluginsYaml() {
             p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) line_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
             ;;
       esac
-      #p="$p" hc="$pStr" yq -i '.plugins[]|= (select(.id == env(p)).id|key) head_comment=env(hc)' "$TARGET_PLUGINS_YAML"
     done
   fi
 
