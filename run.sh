@@ -496,32 +496,40 @@ processDeps() {
     local p=$1
     local indent="${2:-}"
     if ! grep -qE "^$p$" "${TARGET_PLUGIN_DEPS_PROCESSED}"; then
-        debug "${indent}Plugin: $p"
-        # processed
-        echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
-        [ -z "${indent}" ] || echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
-        # bootstrap plugins
-        if isBootstrapPlugin "$p"; then
-            if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
-                debug "${indent}Result - add bootstrap: $p"
-                echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-            else
-                debug "${indent}Result - ignore: $p (already in bootstrap)"
-            fi
-        elif isCapPlugin "$p"; then
-            debug "${indent}Result - add non-bootstrap CAP plugin: $p"
-            echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+      debug "${indent}Plugin: $p"
+      # processed
+      echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
+      # bootstrap plugins
+      if isBootstrapPlugin "$p"; then
+        if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
+          debug "${indent}Result - add bootstrap: $p"
+          echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
         else
-            debug "${indent}Result - add third-party plugin: $p"
-            echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-            # process deps for non-cap plugins
-            for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
-                debug "${indent}  Dependency: $dep"
-                processDeps   "${dep}" "${indent}  "
-            done
+          debug "${indent}Result - ignore: $p (already in bootstrap)"
         fi
+      else
+        if isCapPlugin "$p"; then
+          debug "${indent}Result - add non-bootstrap CAP plugin: $p"
+          echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+        else
+          debug "${indent}Result - add third-party plugin: $p"
+          echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+        fi
+        for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
+          # record ALL non-top-level plugins as dependencies for the categorisation afterwards
+          if ! grep -qE "^$dep$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"; then
+            echo $dep >> "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+          fi
+          if isCapPlugin "$p"; then
+            debug "${indent}  Dependency: $dep (parent in CAP so no further processing)"
+          else
+            debug "${indent}  Dependency: $dep"
+            processDeps "${dep}" "${indent}  "
+          fi
+        done
+      fi
     else
-        debug "${indent}Plugin: $p (already processed)"
+      debug "${indent}Plugin: $p (already processed)"
     fi
 }
 

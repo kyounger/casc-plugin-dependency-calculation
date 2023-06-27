@@ -11,3 +11,6 @@
 
 plugins:
   - id: beer # 3rd lst
+  - id: git-client # cap lst
+  - id: mina-sshd-api-common # cap lst dep
+  - id: mina-sshd-api-core # cap lst dep
