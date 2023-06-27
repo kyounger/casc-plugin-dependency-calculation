@@ -1,2 +1,5 @@
 plugins:
 - id: beer
+- id: git-client
+- id: mina-sshd-api-common
+- id: mina-sshd-api-core

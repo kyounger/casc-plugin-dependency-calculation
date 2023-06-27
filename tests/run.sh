@@ -47,7 +47,11 @@ for d in $(find $SCRIPT_DIR -mindepth 1 -maxdepth 1 -type d); do
     [ -f "${actualPluginCatalogOffline}" ] || die "Expected file '$actualPluginCatalogOffline' doesn't exist."
 
     # compare
-    diff -s "${expectedPluginsYaml}" "${actualPluginsYaml}"
-    diff -s "${expectedPluginCatalog}" "${actualPluginCatalog}"
-    diff -s "${expectedPluginCatalogOffline}" "${actualPluginCatalogOffline}"
+    echo "Diff ${expectedPluginsYaml} vs ${actualPluginsYaml}"
+    diff -s "${expectedPluginsYaml}" "${actualPluginsYaml}" || DIFF_FOUND="y"
+    echo "Diff ${expectedPluginCatalog} vs ${actualPluginCatalog}"
+    diff -s "${expectedPluginCatalog}" "${actualPluginCatalog}" || DIFF_FOUND="y"
+    echo "Diff ${expectedPluginCatalogOffline} vs ${actualPluginCatalogOffline}"
+    diff -s "${expectedPluginCatalogOffline}" "${actualPluginCatalogOffline}" || DIFF_FOUND="y"
+    [ -z "${DIFF_FOUND:-}" ]
 done
