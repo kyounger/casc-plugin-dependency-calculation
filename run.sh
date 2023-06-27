@@ -3,6 +3,7 @@
 set -euo pipefail
 
 # Initialize our own variables:
+INDENT_SPACING='  '
 STDERR_LOG_SUFFIX='.stderr.log'
 CHECK_CVES=1
 INCLUDE_BOOTSTRAP=0
@@ -247,7 +248,8 @@ setScriptVars() {
     die "Please remove the duplicates above before continuing"
 
   #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
-  LIST_OF_PLUGINS=$(yq '.plugins[].id ' "$PLUGIN_YAML_PATH" | xargs)
+  LIST_OF_PLUGINS_MULTILINE=$(yq '.plugins[].id ' "$PLUGIN_YAML_PATH")
+  LIST_OF_PLUGINS=$(echo "$LIST_OF_PLUGINS_MULTILINE" | xargs)
   PLUGIN_CATALOG_PATH=$(dirname "$PLUGIN_YAML_PATH")/plugin-catalog.yaml
 }
 
@@ -257,6 +259,8 @@ createTargetDirs() {
   TARGET_GEN="${TARGET_DIR}/generated"
 
   TARGET_PLUGIN_DEPS_PROCESSED="${TARGET_GEN}/deps-processed.txt"
+  TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
+  TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE="${TARGET_GEN}/deps-processed-tree-multiline.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL="${TARGET_GEN}/deps-processed-non-top-level.txt"
   TARGET_PLUGIN_DEPENDENCY_RESULTS="${TARGET_GEN}/processed-deps-results.yaml"
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
@@ -430,6 +434,10 @@ Summary:
 
   Difference between current vs new plugins.yaml
     diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}"
+
+  Dependency tree of processed plugins (as single line or indented multiline):
+    cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE#${CURRENT_DIR}/}"
 EOF
 
   if [ -f "$TARGET_PLUGIN_CATALOG_ORIG" ]; then
@@ -492,6 +500,26 @@ isDependency() {
     || grep -qE "^$1$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
 }
 
+processDepTree() {
+    local pList=$1
+    local indent="${2:-}"
+    local parentPrefix="${3:-}"
+    for p in $pList; do
+      debug "${indent}$p"
+      echo "${indent}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE}"
+      if [ ! -z "$indent" ] && grep -qE "^$p$" <<< "$LIST_OF_PLUGINS_MULTILINE"; then
+        continue
+      else
+        depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
+        if [ -n "$depList" ]; then
+          processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
+        else
+          echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
+        fi
+      fi
+    done
+}
+
 processDeps() {
     local p=$1
     local indent="${2:-}"
@@ -543,9 +571,11 @@ processAllDeps() {
   [ $INCLUDE_OPTIONAL -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
 
   # process deps
-  for p in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_ORIG_SANITIZED"); do
+  for p in $LIST_OF_PLUGINS; do
       processDeps $p
   done
+  debug "Processing dependency tree:"
+  processDepTree "${LIST_OF_PLUGINS}"
 }
 
 createPluginCatalogAndPluginsYaml() {
