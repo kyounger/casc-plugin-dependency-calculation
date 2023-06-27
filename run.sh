@@ -243,7 +243,7 @@ setScriptVars() {
   # sanity checks
   [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
   info "Sanity checking '$PLUGIN_YAML_PATH' for duplicates."
-  diff <(yq '.plugins|sort_by(.id)' "$PLUGIN_YAML_PATH") <(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") || \
+  diff <(yq '.plugins|sort_by(.id)' "$PLUGIN_YAML_PATH") <(yq '.plugins|unique_by(.id)|sort_by(.id)' "$PLUGIN_YAML_PATH") || \
     die "Please remove the duplicates above before continuing"
 
   #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
