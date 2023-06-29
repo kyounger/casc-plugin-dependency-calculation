@@ -1,5 +1,5 @@
 type: "plugin-catalog"
-version: "2.387.3.5"
+version: "1"
 name: "my-plugin-catalog"
 displayName: "My Plugin Catalog"
 configurations:

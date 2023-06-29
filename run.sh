@@ -642,11 +642,6 @@ createPluginCatalogAndPluginsYaml() {
   yq -i '.configurations[0].includePlugins|=sort_keys(..)|... comments=""' "${TARGET_PLUGIN_CATALOG}"
   cp "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_SANITIZED}"
 
-  # Add version to catalogs
-  info "Setting version of the plugin catalogs to CI_VERSION for transparency"
-  CI_VERSION=$CI_VERSION yq -i '.version = env(CI_VERSION)' "$TARGET_PLUGIN_CATALOG"
-  CI_VERSION=$CI_VERSION yq -i '.version = env(CI_VERSION)' "$TARGET_PLUGIN_CATALOG_OFFLINE"
-
   # Add metadata comments
   if [ -n "${PLUGIN_YAML_COMMENTS_STYLE}" ]; then
     # Header...
