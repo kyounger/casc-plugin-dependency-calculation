@@ -159,6 +159,37 @@ plugins:
     # 3rd lst cve
 ```
 
+## Unnecessary Plugins Check
+
+The script will check for superfluous plugins which are already installed by another plugin in the list.
+
+:warning: You still need to decide whether your situation requires the plugin explicitly. Do not simple remove plugins blindly.
+
+The log will look something like this:
+
+```text
+INFO: ==============================================================
+INFO: !!! Candidates for potential removal from the plugins.yaml !!!
+INFO: ==============================================================
+INFO: The following plugins are dependencies of CAP plugins:  aws-credentials  aws-java-sdk-ec2  aws-java-sdk-minimal  branch-api  cloudbees-casc-items-api  cloudbees-casc-items-commons  git  git-client  github-api  mina-sshd-api-common  mina-sshd-api-core  mina-sshd-api-sftp  pipeline-graph-analysis  pipeline-groovy-lib  pipeline-input-step  pipeline-rest-api  pipeline-stage-tags-metadata  workflow-basic-steps  workflow-multibranch 
+INFO: For more details run: p=<PLUGIN_TO_CHECK>; grep -E ".* -> $p($| )" "target/2.401.2.3/mm/generated/deps-processed-tree-single.txt"
+INFO:   aws-credentials provided by: infradna-backup
+INFO:   aws-java-sdk-ec2 provided by: aws-credentials infradna-backup
+INFO:   aws-java-sdk-minimal provided by: aws-credentials aws-java-sdk-ec2 infradna-backup
+INFO:   branch-api provided by: pipeline-model-definition workflow-multibranch
+```
+
+The command given given for more detail looks like:
+
+```text
+❯ p=aws-credentials; grep -E ".* -> $p($| )" "target/2.401.2.3/mm/generated/deps-processed-tree-single.txt"
+infradna-backup -> aws-credentials -> aws-java-sdk-ec2 -> aws-java-sdk-minimal -> apache-httpcomponents-client-4-api
+infradna-backup -> aws-credentials -> aws-java-sdk-ec2 -> aws-java-sdk-minimal -> jackson2-api -> javax-activation-api
+infradna-backup -> aws-credentials -> aws-java-sdk-ec2 -> aws-java-sdk-minimal -> jackson2-api -> jaxb -> javax-activation-api
+...
+...
+```
+
 ## Examples
 
 A single run with the plugins.yaml file in the same directory as `run.sh`. This creates `plugin-catalog.yaml`:

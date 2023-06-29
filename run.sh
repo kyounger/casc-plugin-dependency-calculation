@@ -427,7 +427,7 @@ createPluginListsWithPIMT() {
 
 showSummaryResult() {
 cat << EOF
-Summary:
+======================= Summary ====================================
 
   See the new files:
     yq  "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
@@ -438,6 +438,7 @@ Summary:
   Dependency tree of processed plugins (as single line or indented multiline):
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}"
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE#${CURRENT_DIR}/}"
+
 EOF
 
   if [ -f "$TARGET_PLUGIN_CATALOG_ORIG" ]; then
@@ -445,6 +446,7 @@ cat << EOF
 
   Difference between current vs new plugin-catalog.yaml (if existed)
     diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+
 EOF
   fi
 }
@@ -507,15 +509,11 @@ processDepTree() {
     for p in $pList; do
       debug "${indent}$p"
       echo "${indent}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE}"
-      if [ ! -z "$indent" ] && grep -qE "^$p$" <<< "$LIST_OF_PLUGINS_MULTILINE"; then
-        continue
+      depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
+      if [ -n "$depList" ]; then
+        processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
       else
-        depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
-        if [ -n "$depList" ]; then
-          processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
-        else
-          echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
-        fi
+        echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
       fi
     done
 }
@@ -662,6 +660,7 @@ createPluginCatalogAndPluginsYaml() {
     esac
 
     # Plugin comments...
+    considerForPotentialRemoval=""
     for p in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML"); do
       export pStr=""
       isCapPlugin "$p" && pStr="${pStr} cap" || pStr="${pStr} 3rd"
@@ -670,18 +669,34 @@ createPluginCatalogAndPluginsYaml() {
       isDependency "$p" && pStr="${pStr} dep"
       isDeprecatedPlugin "$p" && pStr="${pStr} old"
       isNotAffectedByCVE "$p" || pStr="${pStr} cve"
+      if [[ "$pStr" =~ cap.*dep ]]; then
+        considerForPotentialRemoval="$considerForPotentialRemoval $p "
+      fi
       case "${PLUGIN_YAML_COMMENTS_STYLE}" in
-          header)
-            p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) head_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
-            ;;
-          footer)
-            p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) foot_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
-            ;;
-          line)
-            p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) line_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
-            ;;
+        header)
+          p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) head_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
+          ;;
+        footer)
+          p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) foot_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
+          ;;
+        line)
+          p=$p yq -i '.plugins[]|= (select(.id == env(p)).id|key) line_comment=env(pStr)' "$TARGET_PLUGINS_YAML"
+          ;;
       esac
     done
+
+    # list potential removal candidates
+    if [ -n "$considerForPotentialRemoval" ]; then
+      info "=============================================================="
+      info "!!! Candidates for potential removal from the plugins.yaml !!!"
+      info "=============================================================="
+      info "The following plugins are dependencies of CAP plugins: $considerForPotentialRemoval"
+      info "For more details run: p=<PLUGIN_TO_CHECK>; grep -E \".* -> \$p($| )\" \"${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}\""
+      for pToCheck in $considerForPotentialRemoval; do
+        parentList=$(grep -E ".* -> $pToCheck($| )" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" | cut -d' ' -f 1 | sort -u | xargs)
+        info "  ${pToCheck} provided by: $parentList"
+      done
+    fi
   fi
 
   # copy in-place if required
