@@ -581,7 +581,7 @@ createPluginCatalogAndPluginsYaml() {
   # create the plugin catalog
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${targetFile}"
+  ver="[$CI_VERSION]" yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "prerequisites": { "productVersion": strenv(ver) }, "includePlugins": {}}]}' "${targetFile}"
   for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
     pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
     k="$pluginName" v="$pluginVersion" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${targetFile}"
@@ -589,7 +589,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "includePlugins": {}}]}' "${targetFile}"
+  ver="[$CI_VERSION]" yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "prerequisites": { "productVersion": strenv(ver) }, "includePlugins": {}}]}' "${targetFile}"
   for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
     pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
 
