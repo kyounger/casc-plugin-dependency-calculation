@@ -12,7 +12,7 @@ DOWNLOAD=0
 VERBOSE_LOG=0
 REFRESH=0
 REFRESH_UC=0
-INPLACE_UPDATE=0
+DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
 CI_VERSION=
 CI_TYPE=mm
 PLUGIN_YAML_PATHS_FILES=()
@@ -20,7 +20,9 @@ PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
 PLUGIN_YAML_COMMENTS_STYLE=line
-TARGET_BASE_DIR=${TARGET_BASE_DIR:="$(pwd)/target"}
+CURRENT_DIR=$(pwd)
+TARGET_BASE_DIR=${TARGET_BASE_DIR:="${CURRENT_DIR}/target"}
+CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
 CB_HELM_REPO_URL=https://public-charts.artifacts.cloudbees.com/repository/public/index.yaml
 JENKINS_UC_ACTUAL_URL='https://updates.jenkins.io/update-center.actual.json'
 
@@ -29,7 +31,8 @@ cat << EOF
 Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
 
     -h          display this help and exit
-    -f FILE     path to the plugins.yaml file
+    -f FILE     path to the plugins.yaml file (can be set multiple times)
+    -M          When processing multiple plugins files, DEDUPLICATE the list first
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -t          The instance type (oc, oc-traditional, cm, mm)
 
@@ -55,8 +58,6 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -r          Refresh the downloaded wars/jars (no-cache)
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
-    -x          Inplace-update of plugins.yaml and plugin-catalog.yaml
-                    (DEPRECATED - please use final target options instead)
 
 EOF
 }
@@ -70,7 +71,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts iIhv:xf:F:c:C:m:rRSt:VdD:e: opt; do
+while getopts iIhv:xf:F:c:C:m:MrRSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -103,13 +104,13 @@ while getopts iIhv:xf:F:c:C:m:rRSt:VdD:e: opt; do
             ;;
         m)  PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
             ;;
+        M)  DEDUPLICATE_PLUGINS=1
+            ;;
         r)  REFRESH=1
             ;;
         R)  REFRESH_UC=1
             ;;
         S)  CHECK_CVES=0
-            ;;
-        x)  INPLACE_UPDATE=1
             ;;
         *)
             show_help >&2
@@ -178,34 +179,19 @@ cacheUpdateCenter() {
   fi
 }
 
-setScriptVars() {
-  # prereqs
+prereqs() {
   for tool in yq jq curl awk; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
-
-  # default to latest CI Version if not set
-  if [ -z "${CI_VERSION:-}" ]; then
-    info "CI_VERSION not set. Determining latest version..."
-    mkdir -p "${TARGET_BASE_DIR}"
-    CB_HELM_REPO_INDEX="${TARGET_BASE_DIR}/helm-chart.index.yaml"
-    curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}"
-    LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
-    CI_VERSION=$(cv=$LATEST_CHART_VERSION yq '.entries.cloudbees-core[]|select(.version == env(cv)).appVersion' "${CB_HELM_REPO_INDEX}")
-  fi
-  [ -n "${CI_VERSION:-}" ] && info "CI_VERSION set to '$CI_VERSION'." || die "CI_VERSION was empty."
-
   # some general sanity checks
   if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}" ]; then
     [ -f "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be a file"
     [ -x "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be executable"
   fi
-  if [ $DOWNLOAD -eq 0 ] && [ -n "${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}" ]; then
-    die "The offline catalog target can only be set together with the '-d' download option."
-  fi
   [[ "$CI_TYPE" =~ ^mm|oc|cm|oc-traditional$ ]] || die "CI_TYPE '${CI_TYPE}' not recognised"
+}
 
-
+setScriptVars() {
   #adjustable vars. Will inherit from shell, but default to what you see here.
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
   PLUGIN_CATALOG_OFFLINE_URL_BASE="${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}"
@@ -214,8 +200,6 @@ setScriptVars() {
   CB_UPDATE_CENTER_URL_WITH_VERSION="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
   #cache some stuff locally, sure cache directory exists
-  CURRENT_DIR=$(pwd)
-  CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
   info "Setting CACHE_BASE_DIR=$CACHE_BASE_DIR"
   CB_UPDATE_CENTER_CACHE_DIR="$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/update-center"
   CB_UPDATE_CENTER_CACHE_FILE="${CB_UPDATE_CENTER_CACHE_DIR}/update-center.json"
@@ -243,13 +227,7 @@ setScriptVars() {
   fi
   # sanity checks
   [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
-  info "Sanity checking '$PLUGIN_YAML_PATH' for duplicates."
-  diff <(yq '.plugins|sort_by(.id)' "$PLUGIN_YAML_PATH") <(yq '.plugins|unique_by(.id)|sort_by(.id)' "$PLUGIN_YAML_PATH") || \
-    die "Please remove the duplicates above before continuing"
 
-  #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
-  LIST_OF_PLUGINS_MULTILINE=$(yq '.plugins[].id ' "$PLUGIN_YAML_PATH")
-  LIST_OF_PLUGINS=$(echo "$LIST_OF_PLUGINS_MULTILINE" | xargs)
   PLUGIN_CATALOG_PATH=$(dirname "$PLUGIN_YAML_PATH")/plugin-catalog.yaml
 }
 
@@ -299,7 +277,27 @@ createTargetDirs() {
   mkdir -p "${TARGET_GEN}"
 }
 
+equalPlugins() {
+  diff <(yq '.plugins|sort_by(.id)' "$PLUGIN_YAML_PATH") <(yq '.plugins|unique_by(.id)|sort_by(.id)' "$PLUGIN_YAML_PATH")
+}
+
 copyOrExtractMetaInformation() {
+  #create a space-delimited list of plugins from plugins.yaml to pass to PIMT
+  info "Sanity checking '$PLUGIN_YAML_PATH' for duplicates."
+  if ! equalPlugins; then
+    if [ $DEDUPLICATE_PLUGINS -eq 1 ]; then
+      info "Found duplicates above - removing from '$PLUGIN_YAML_PATH'."
+      deDupes=$(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") \
+        yq -i '.plugins = env(deDupes)' "$PLUGIN_YAML_PATH"
+      equalPlugins || die "Something went wrong with the deduplication. Please check the commands used..."
+    else
+      die "Please use '-M' or remove the duplicate plugin above before continuing."
+    fi
+  fi
+
+  LIST_OF_PLUGINS_MULTILINE=$(yq '.plugins[].id ' "$PLUGIN_YAML_PATH")
+  LIST_OF_PLUGINS=$(echo "$LIST_OF_PLUGINS_MULTILINE" | xargs)
+
   # save a copy of the original json files
   cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG}"
   # copy again and sanitize (better for comparing later)
@@ -577,11 +575,12 @@ processAllDeps() {
 }
 
 createPluginCatalogAndPluginsYaml() {
+  export descriptionVer="These are Non-CAP plugins for version $CI_VERSION"
+  export productVersion="[$CI_VERSION]"
   info "Recreate plugin-catalog"
-  # create the plugin catalog
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
-  ver="[$CI_VERSION]" yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "prerequisites": { "productVersion": strenv(ver) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
     pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
     k="$pluginName" v="$pluginVersion" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${targetFile}"
@@ -589,7 +588,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
-  ver="[$CI_VERSION]" yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": "These are Non-CAP plugins", "prerequisites": { "productVersion": strenv(ver) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
     pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
 
@@ -699,12 +698,15 @@ createPluginCatalogAndPluginsYaml() {
     fi
   fi
 
-  # copy in-place if required
-  if [ $INPLACE_UPDATE -eq 1 ]; then
-    warn "Deprecated: please use the final location options instead."
-    #write the the inplace updated plugin-catalog.yaml
-    cp "${TARGET_PLUGINS_YAML}" "$PLUGIN_YAML_PATH"
-    cp "${TARGET_PLUGIN_CATALOG}" "$PLUGIN_CATALOG_PATH"
+  # are we currently processing multi-versions?
+  if [ -n "${TMP_PLUGIN_CATALOG:-}" ]; then
+    tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}")
+    echo "$tmpStr" > "$TMP_PLUGIN_CATALOG"
+    tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}")
+    echo "$tmpStr" > "$TMP_PLUGIN_CATALOG_OFFLINE"
+    info "Copying temp (collective) plugin catalog files to the target files."
+    cp -v "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}"
+    cp -v "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}"
   fi
 
   # final target stuff
@@ -714,13 +716,44 @@ createPluginCatalogAndPluginsYaml() {
 
 }
 
+runMainProgram() {
+  setScriptVars
+  cachePimtJar
+  cacheUpdateCenter
+  createTargetDirs
+  copyOrExtractMetaInformation
+  staticCheckOfRequiredPlugins
+  createPluginListsWithPIMT
+  createPluginCatalogAndPluginsYaml
+  showSummaryResult
+}
+
+checkCIVersions() {
+  # default to latest CI Version if not set
+  if [ -z "${CI_VERSION:-}" ]; then
+    info "CI_VERSION not set. Determining latest version..."
+    mkdir -p "${TARGET_BASE_DIR}"
+    CB_HELM_REPO_INDEX="${TARGET_BASE_DIR}/helm-chart.index.yaml"
+    curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}"
+    LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
+    CI_VERSION=$(cv=$LATEST_CHART_VERSION yq '.entries.cloudbees-core[]|select(.version == env(cv)).appVersion' "${CB_HELM_REPO_INDEX}")
+  fi
+  [ -n "${CI_VERSION:-}" ] && info "CI_VERSION set to '$CI_VERSION'." || die "CI_VERSION was empty."
+
+  IFS=', ' read -r -a CI_VERSIONS_ARRAY <<< "$CI_VERSION"
+  if [ ${#CI_VERSIONS_ARRAY[@]} -gt 1 ]; then
+    info "ATTENTION: Comma or space separated CI_VERSION's detected. The COMPLETE plugin-catalog files will be placed in the last version in the list."
+    TMP_PLUGIN_CATALOG="${TARGET_BASE_DIR}/plugin-catalog.yaml"
+    TMP_PLUGIN_CATALOG_OFFLINE="${TARGET_BASE_DIR}/plugin-catalog-offline.yaml"
+    echo > "$TMP_PLUGIN_CATALOG"
+    echo > "$TMP_PLUGIN_CATALOG_OFFLINE"
+  fi
+}
+
 # main
-setScriptVars
-cachePimtJar
-cacheUpdateCenter
-createTargetDirs
-copyOrExtractMetaInformation
-staticCheckOfRequiredPlugins
-createPluginListsWithPIMT
-createPluginCatalogAndPluginsYaml
-showSummaryResult
+prereqs
+checkCIVersions
+for i in $(echo ${!CI_VERSIONS_ARRAY[@]}); do
+  CI_VERSION="${CI_VERSIONS_ARRAY[$i]}"
+  runMainProgram
+done
