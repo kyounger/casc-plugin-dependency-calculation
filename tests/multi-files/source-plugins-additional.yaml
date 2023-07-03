@@ -1,0 +1,3 @@
+plugins:
+- id: beer
+- id: job-dsl

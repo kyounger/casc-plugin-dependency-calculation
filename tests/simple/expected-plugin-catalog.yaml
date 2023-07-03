@@ -3,7 +3,9 @@ version: "1"
 name: "my-plugin-catalog"
 displayName: "My Plugin Catalog"
 configurations:
-  - description: "These are Non-CAP plugins"
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
     includePlugins:
       beer:
         version: "42.v776b_04d96de3"

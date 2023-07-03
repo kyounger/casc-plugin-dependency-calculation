@@ -3,48 +3,47 @@
 set -euo pipefail
 
 # echo to stderr and exit 1
-die() {
+function die() {
   cat <<< "ERROR: $@" 1>&2
   exit 1
 }
+export -f die
 
+# tool vars
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUN_CMD="$(dirname $SCRIPT_DIR)/run.sh"
+export RUN_CMD="$(dirname $SCRIPT_DIR)/run.sh"
+export TARGET_BASE_DIR="$(dirname $SCRIPT_DIR)/target"
+export CACHE_BASE_DIR="$(dirname $SCRIPT_DIR)/.cache"
+
+# test vars
 RESULTS_DIR=$(mktemp -d)
+ALL_TESTS=$(find $SCRIPT_DIR -mindepth 1 -maxdepth 1 -type d  -printf '%f\n')
+TESTS="${1:-$ALL_TESTS}"
+CORRECT_TESTS="${CORRECT_TESTS:-0}"
 
-VERSION="${VERSION:-2.387.3.5}"
-TYPE="${TYPE:-mm}"
+for testName in $TESTS; do
+    testDir="${SCRIPT_DIR}/$testName"
+    echo "TEST INFO: Testing $(basename $testDir)..."
+    expectedPluginsYaml="${testDir}/expected-plugins.yaml"
+    expectedPluginCatalog="${testDir}/expected-plugin-catalog.yaml"
+    expectedPluginCatalogOffline="${testDir}/expected-plugin-catalog-offline.yaml"
+    actualPluginsYaml="${testDir}/actual-plugins.yaml"
+    actualPluginCatalog="${testDir}/actual-plugin-catalog.yaml"
+    actualPluginCatalogOffline="${testDir}/actual-plugin-catalog-offline.yaml"
 
+    # ensure files exist
+    touch \
+      "${expectedPluginsYaml}" \
+      "${expectedPluginCatalog}" \
+      "${expectedPluginCatalogOffline}"
 
-for d in $(find $SCRIPT_DIR -mindepth 1 -maxdepth 1 -type d); do
-    echo "Testing $(basename $d)..."
-    sourceYaml="${d}/source-plugins.yaml"
-    targetDir="$d/$VERSION/$TYPE"
+    # run command
+    "${testDir}/command.sh"
 
-    expectedPluginsYaml="${targetDir}/expected-plugins.yaml"
-    expectedPluginCatalog="${targetDir}/expected-plugin-catalog.yaml"
-    expectedPluginCatalogOffline="${targetDir}/expected-plugin-catalog-offline.yaml"
-    actualPluginsYaml="${targetDir}/actual-plugins.yaml"
-    actualPluginCatalog="${targetDir}/actual-plugin-catalog.yaml"
-    actualPluginCatalogOffline="${targetDir}/actual-plugin-catalog-offline.yaml"
-
-    # sanity checks
-    [ -f "${sourceYaml}" ] || die "Expected file '$sourceYaml' doesn't exist."
-    [ -d "${targetDir}" ] || die "Expected directory '$targetDir' doesn't exist."
-    [ -f "${expectedPluginsYaml}" ] || die "Expected file '$expectedPluginsYaml' doesn't exist."
-    [ -f "${expectedPluginCatalog}" ] || die "Expected file '$expectedPluginCatalog' doesn't exist."
-    [ -f "${expectedPluginCatalogOffline}" ] || die "Expected file '$expectedPluginCatalogOffline' doesn't exist."
-
-    $RUN_CMD -v "$VERSION" -t "$TYPE" -d \
-         -f "${sourceYaml}" \
-         -F "${actualPluginsYaml}" \
-         -c "${actualPluginCatalog}" \
-         -C "${actualPluginCatalogOffline}"
-
-    # files exist?
-    [ -f "${actualPluginsYaml}" ] || die "Expected file '$actualPluginsYaml' doesn't exist."
-    [ -f "${actualPluginCatalog}" ] || die "Expected file '$actualPluginCatalog' doesn't exist."
-    [ -f "${actualPluginCatalogOffline}" ] || die "Expected file '$actualPluginCatalogOffline' doesn't exist."
+    # resulting files exist?
+    [ -f "${actualPluginsYaml}" ] || die "Resulting file '$actualPluginsYaml' doesn't exist."
+    [ -f "${actualPluginCatalog}" ] || die "Resulting file '$actualPluginCatalog' doesn't exist."
+    [ -f "${actualPluginCatalogOffline}" ] || die "Resulting file '$actualPluginCatalogOffline' doesn't exist."
 
     # compare
     echo "Diff ${expectedPluginsYaml} vs ${actualPluginsYaml}"
@@ -53,5 +52,16 @@ for d in $(find $SCRIPT_DIR -mindepth 1 -maxdepth 1 -type d); do
     diff -s "${expectedPluginCatalog}" "${actualPluginCatalog}" || DIFF_FOUND="y"
     echo "Diff ${expectedPluginCatalogOffline} vs ${actualPluginCatalogOffline}"
     diff -s "${expectedPluginCatalogOffline}" "${actualPluginCatalogOffline}" || DIFF_FOUND="y"
-    [ -z "${DIFF_FOUND:-}" ]
+    if [ -n "${DIFF_FOUND:-}" ]; then
+      if [[ $CORRECT_TESTS -eq 1 ]]; then
+        echo "Diff found. Correcting the expected files..."
+        cp -v "${actualPluginsYaml}" "${expectedPluginsYaml}"
+        cp -v "${actualPluginCatalog}" "${expectedPluginCatalog}"
+        cp -v "${actualPluginCatalogOffline}" "${expectedPluginCatalogOffline}"
+      else
+        die "TEST ERROR: Test $(basename $testDir) failed. See above."
+      fi
+    else
+    echo "TEST INFO: Test $(basename $testDir) was SUCCESSFUL."
+    fi
 done

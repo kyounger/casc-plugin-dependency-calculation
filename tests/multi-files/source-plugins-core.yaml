@@ -1,0 +1,5 @@
+plugins:
+- id: job-dsl
+- id: git-client
+- id: mina-sshd-api-common
+- id: mina-sshd-api-core

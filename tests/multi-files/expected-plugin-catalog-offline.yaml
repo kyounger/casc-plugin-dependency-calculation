@@ -1,0 +1,21 @@
+type: "plugin-catalog"
+version: "1"
+name: "my-plugin-catalog"
+displayName: "My Offline Plugin Catalog"
+configurations:
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
+    includePlugins:
+      beer:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/beer/42.v776b_04d96de3/beer.hpi"
+      job-dsl:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/job-dsl/1.83/job-dsl.hpi"
+  - description: "These are Non-CAP plugins for version 2.401.2.3"
+    prerequisites:
+      productVersion: "[2.401.2.3]"
+    includePlugins:
+      beer:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/beer/42.v776b_04d96de3/beer.hpi"
+      job-dsl:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/job-dsl/1.84/job-dsl.hpi"
