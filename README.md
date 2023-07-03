@@ -39,14 +39,16 @@ Otherwise it is strongly recommended to use the new version.
 
 ## New Features
 
-- option to include metadata as a comment in the `plugins.yaml`
-- option to set specific target locations for final files
-- improved plugin dependency management for more accurate `plugins.yaml`
+- **multiple CBCI versions** - create a master plugin catalog for multiple CBCI versions
+- **multiple source files** - create a master plugin catalog from multiple source files
+- **metadata** - option to include metadata as a comment in the `plugins.yaml`
+- **final target locations** - option to set specific target locations for final files
+- **bootstrap or optional plugins** - improved plugin dependency management for more accurate `plugins.yaml`
     - include optional dependencies per flag
     - include bootstrap dependencies per flag
-- ability to run `exec-hooks` for plugin post-processing
-- ability to create air-gapped `plugin-catalog.yaml` files
-- rudimentary plugin-cache for holding plugins without an artifact repository manager
+- **exec hooks** - ability to run `exec-hooks` for plugin post-processing
+    - ability to create air-gapped `plugin-catalog-offline.yaml` files
+- **simple cache** - rudimentary plugin-cache for holding plugins without an artifact repository manager
 
 ## Requirements
 
@@ -62,7 +64,8 @@ Otherwise it is strongly recommended to use the new version.
 Usage: run.sh -v <CI_VERSION> [OPTIONS]
 
     -h          display this help and exit
-    -f FILE     path to the plugins.yaml file
+    -f FILE     path to the plugins.yaml file (can be set multiple times)
+    -M          When processing multiple plugins files, DEDUPLICATE the list first
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -t          The instance type (oc, oc-traditional, cm, mm)
 
@@ -72,7 +75,8 @@ Usage: run.sh -v <CI_VERSION> [OPTIONS]
 
     -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
     -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
-                    defaults to http://plugin-catalog/plugins/$PNAME/$PVERSION
+                    e.g. 'http://plugin-catalog/plugins/$PNAME/$PVERSION'
+                    defaults to the official url of the plugin
     -e FILE     Exec-hook - script to call when processing 3rd party plugins
                     script will have access env vars PNAME, PVERSION, PURL, PFILE
                     can be used to automate the uploading of plugins to a repository manager
@@ -87,8 +91,6 @@ Usage: run.sh -v <CI_VERSION> [OPTIONS]
     -r          Refresh the downloaded wars/jars (no-cache)
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
-    -x          Inplace-update of plugins.yaml and plugin-catalog.yaml
-                    (DEPRECATED - please use final target options instead)
 ```
 
 ## Plugin Metadata
@@ -190,6 +192,10 @@ infradna-backup -> aws-credentials -> aws-java-sdk-ec2 -> aws-java-sdk-minimal -
 ...
 ```
 
+## Tests
+
+Please see the [tests page](./tests/README.md) for details on how to run and create tests.
+
 ## Examples
 
 A single run with the plugins.yaml file in the same directory as `run.sh`. This creates `plugin-catalog.yaml`:
@@ -211,11 +217,11 @@ Multiple runs taking advantage of caching and generating multiple different `plu
 
 ## Notes
 
-* This will NOT update your `plugins.yaml` file unless you specify the `-x` flag.
-* This process caches all resources that it fetches under a `.cache` directory in the PWD. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
-  * `jenkins.war` from the docker image
-  * `jenkins-plugin-manager.jar` download from github releases
-  * `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
+- This will NOT update your `plugins.yaml` file unless you specify the `-x` flag.
+- This process caches all resources that it fetches under a `.cache` directory in the PWD. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
+    - `jenkins.war` from the docker image
+    - `jenkins-plugin-manager.jar` download from github releases
+    - `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
 
 ## Advanced
 

@@ -1,12 +1,14 @@
-### Tests
+# Tests
 
-#### Running all tests
+## Running all tests
+
+Run the full test suite by running:
 
 ```sh
 ./tests/run.sh
 ```
 
-#### Running a single test
+## Running a single test
 
 Run a single test by passing the test directory name.
 
@@ -14,7 +16,7 @@ Run a single test by passing the test directory name.
 ./tests/run.sh simple
 ```
 
-#### Creating or correcting tests
+## Creating or correcting tests
 
 Use the `CORRECT_TESTS=1` environment variable to re-align a test in the case of a feature changing the output of the resulting files.
 
@@ -42,4 +44,3 @@ vim tests/my-new-test/command.sh
 # create the expected yamls
 CORRECT_TESTS=1 ./tests/run.sh my-new-test
 ```
-
