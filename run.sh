@@ -21,7 +21,7 @@ PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
 PLUGIN_YAML_COMMENTS_STYLE=line
 CURRENT_DIR=$(pwd)
-TARGET_BASE_DIR=${TARGET_BASE_DIR:="${CURRENT_DIR}/target"}
+TARGET_BASE_DIR="${TARGET_BASE_DIR:="${CURRENT_DIR}/target"}"
 CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
 CB_HELM_REPO_URL=https://public-charts.artifacts.cloudbees.com/repository/public/index.yaml
 JENKINS_UC_ACTUAL_URL='https://updates.jenkins.io/update-center.actual.json'
@@ -729,10 +729,10 @@ runMainProgram() {
 }
 
 checkCIVersions() {
+  mkdir -p "${TARGET_BASE_DIR}"
   # default to latest CI Version if not set
   if [ -z "${CI_VERSION:-}" ]; then
     info "CI_VERSION not set. Determining latest version..."
-    mkdir -p "${TARGET_BASE_DIR}"
     CB_HELM_REPO_INDEX="${TARGET_BASE_DIR}/helm-chart.index.yaml"
     curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}"
     LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
