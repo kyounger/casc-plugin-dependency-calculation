@@ -188,7 +188,7 @@ prereqs() {
     [ -f "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be a file"
     [ -x "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be executable"
   fi
-  [[ "$CI_TYPE" =~ ^mm|oc|cm|oc-traditional$ ]] || die "CI_TYPE '${CI_TYPE}' not recognised"
+  [[ "$CI_TYPE" =~ ^(mm|oc|cm|oc-traditional)$ ]] || die "CI_TYPE '${CI_TYPE}' not recognised"
 }
 
 setScriptVars() {
@@ -483,7 +483,7 @@ isNotAffectedByCVE() {
       for pattern in $(jq --arg w "$w" 'select(.id == $w).versions[].pattern' "${TARGET_UC_ACTUAL_WARNINGS}"); do
         patternNoQuotes=${pattern//\"/}
         debug "Plugin '$1' - testing version '$pluginVersion' against pattern '$patternNoQuotes' from file '$pWarnings'"
-        if [[ "$pluginVersion" =~ ^$patternNoQuotes$ ]]; then
+        if [[ "$pluginVersion" =~ ^($patternNoQuotes)$ ]]; then
           info "Plugin '$1' - affected by '$w' according to pattern '$patternNoQuotes' from file '$(basename $pWarnings)'"
           return 1
         fi
