@@ -12,6 +12,7 @@ DOWNLOAD=0
 VERBOSE_LOG=0
 REFRESH=0
 REFRESH_UC=0
+MINIMAL_PLUGIN_LIST="${MINIMAL_PLUGIN_LIST:-0}"
 DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
 CI_VERSION=
 CI_TYPE=mm
@@ -53,6 +54,7 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -I          Include bootstrap dependencies in the plugins.yaml
     -m STYLE    Include plugin metadata as comment (line, header, footer, none)
                     defaults to '$PLUGIN_YAML_COMMENTS_STYLE'
+    -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
     -S          Disable CVE check against plugins (added to metadata)
 
     -r          Refresh the downloaded wars/jars (no-cache)
@@ -71,7 +73,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts iIhv:xf:F:c:C:m:MrRSt:VdD:e: opt; do
+while getopts iIhv:xf:F:c:C:m:MrRsSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -86,6 +88,7 @@ while getopts iIhv:xf:F:c:C:m:MrRSt:VdD:e: opt; do
         d)  DOWNLOAD=1
             ;;
         D)  PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
+            DOWNLOAD=1
             ;;
         e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
@@ -109,6 +112,8 @@ while getopts iIhv:xf:F:c:C:m:MrRSt:VdD:e: opt; do
         r)  REFRESH=1
             ;;
         R)  REFRESH_UC=1
+            ;;
+        s)  MINIMAL_PLUGIN_LIST=1
             ;;
         S)  CHECK_CVES=0
             ;;
@@ -236,6 +241,7 @@ createTargetDirs() {
   TARGET_DIR="${TARGET_BASE_DIR}/${CI_VERSION}/${CI_TYPE}"
   TARGET_GEN="${TARGET_DIR}/generated"
 
+  TARGET_PLUGIN_LIST_ALL_EXPECTED="${TARGET_GEN}/list-all-expected-in-controller.txt"
   TARGET_PLUGIN_DEPS_PROCESSED="${TARGET_GEN}/deps-processed.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE="${TARGET_GEN}/deps-processed-tree-multiline.txt"
@@ -262,6 +268,7 @@ createTargetDirs() {
   TARGET_PLUGIN_CATALOG="${TARGET_DIR}/plugin-catalog.yaml"
   TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/plugins.yaml"
+  TARGET_PLUGINS_YAML_MINIMAL="${TARGET_DIR}/plugins-minimal.yaml"
   TARGET_PLUGINS_DIR="${TARGET_GEN}/plugins"
   # original files
   TARGET_PLUGINS_YAML_ORIG="${TARGET_PLUGINS_YAML}.orig.yaml"
@@ -329,12 +336,6 @@ copyOrExtractMetaInformation() {
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_ALL_CAP_WITH_VERSION}"
 
   # create some info lists from the online update-center
-  jq -r '.envelope.plugins[]|select(.scope|test("(bootstrap)"))|.artifactId' \
-    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.bootstrap.txt"
-  jq -r '.envelope.plugins[]|select(.scope|test("(fat)"))|.artifactId' \
-    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.non-bootstrap.txt"
-  jq -r '.envelope.plugins[]|.artifactId' \
-    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all.txt"
   jq -r '.plugins[]|.name' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.plugins.all.txt"
   jq -r '.plugins[]|"\(.name):\(.dependencies[]|select(.optional == false)|.name)"' \
@@ -353,7 +354,7 @@ copyOrExtractMetaInformation() {
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.verified.txt"
   jq -r '.plugins[]|select((.labels != null) and (.labels[]|index("deprecated")) != null).name' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
-  comm -13 "${TARGET_UC_ONLINE}.envelope.all.txt" "${TARGET_UC_ONLINE}.plugins.all.txt" \
+  comm -13 "${TARGET_ENVELOPE_ALL_CAP}" "${TARGET_UC_ONLINE}.plugins.all.txt" \
     > "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"
 }
 
@@ -437,13 +438,24 @@ cat << EOF
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}"
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE#${CURRENT_DIR}/}"
 
+  List of all plugins to be expected on controller after startup:
+    cat "${TARGET_PLUGIN_LIST_ALL_EXPECTED#${CURRENT_DIR}/}"
+
 EOF
 
   if [ -f "$TARGET_PLUGIN_CATALOG_ORIG" ]; then
 cat << EOF
-
   Difference between current vs new plugin-catalog.yaml (if existed)
     diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+
+EOF
+  fi
+
+  if [ -f "$TARGET_PLUGINS_YAML_MINIMAL" ]; then
+cat << EOF
+  Minimal plugins.yaml (if existed)
+    yq "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
+    diff "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
 
 EOF
   fi
@@ -709,11 +721,91 @@ createPluginCatalogAndPluginsYaml() {
     cp -v "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}"
   fi
 
+  # let's create a list of ALL EXPECTED PLUGINS found on the controller after startup
+  cat \
+    "$TARGET_ENVELOPE_BOOTSTRAP" \
+    "$TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL" \
+    "$TARGET_PLUGIN_DEPS_PROCESSED" \
+    | sort -u > "$TARGET_PLUGIN_LIST_ALL_EXPECTED"
+
+  # how about creating a minimal list?
+  if [ ${MINIMAL_PLUGIN_LIST} -eq 1 ]; then
+    reducedPluginList="$(yq '.plugins[].id' target/2.401.2.6/mm/plugins.yaml)"
+    reducedList=1
+    removeAllBootstrap
+    reducePluginList
+    cp "${TARGET_PLUGINS_YAML}" "$TARGET_PLUGINS_YAML_MINIMAL"
+    for k in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_MINIMAL"); do
+      if ! grep -qE "^$k$" <<< "$reducedPluginList"; then
+        debug "Removing '$k' from the TARGET_PLUGINS_YAML_MINIMAL"
+        k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL}"
+      fi
+    done
+  fi
+
   # final target stuff
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
   [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || cp -v "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
   [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || cp -v "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
 
+}
+
+sortDepsByDepth() {
+  for p in $1; do
+    matchedLines=$(grep -oE ".* -> $p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" | sed -e 's/\ $//' | sort -u)
+    while IFS= read -r line; do
+      echo "$(echo "$line" | awk '{ printf("%02d\n", gsub(" -> ","")); }') $line"
+    done <<< "$matchedLines"
+  done | sort -r | grep -vE "^00.*" || true
+}
+
+reducePluginList() {
+  while [ -n "${reducedList:-}" ]; do
+    reducedList=
+    depsSortedByDepth=$(sortDepsByDepth "$reducedPluginList")
+    debug "====================================="
+    debug "========        DEPTH      =========="
+    debug "====================================="
+    debug "$depsSortedByDepth"
+    debug "====================================="
+    debug "====================================="
+    debug "========        LIST       =========="
+    debug "====================================="
+    debug "$reducedPluginList"
+    debug "====================================="
+    pluginLineToCheck=$(head -n 1 <<< "$depsSortedByDepth")
+    # go through the list of parents. if parent found in main list, remove any of its children
+    for parentToCheck in $(echo "$pluginLineToCheck" | sed -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
+      if grep -qE "^($parentToCheck)$" "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"; then
+        debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
+        continue
+      elif grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
+        debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
+        childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
+          | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
+          | sort -u | xargs)
+        for childToRemove in $childrenToRemove; do
+          if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
+            debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
+            tmpReducedPluginList=$(grep -vE "^$childToRemove$" <<< "$reducedPluginList")
+            reducedPluginList=$tmpReducedPluginList
+            reducedList=1
+          fi
+        done
+        break
+      fi
+    done
+  done
+}
+
+removeAllBootstrap() {
+    for p in $reducedPluginList; do
+        if grep -qE "^($p)$" "${TARGET_ENVELOPE_BOOTSTRAP}"; then
+            echo "Removing bootstrap '$p' from main list..."
+            tmpReducedPluginList=$(grep -vE "^$p$" <<< "$reducedPluginList")
+            reducedPluginList=$tmpReducedPluginList
+        fi
+    done
 }
 
 runMainProgram() {
