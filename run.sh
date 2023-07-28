@@ -43,10 +43,15 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
 
     -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
     -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
-                    e.g. 'http://plugin-catalog/plugins/\$PNAME/\$PVERSION'
-                    defaults to the official url of the plugin
+                    This make use of the PNAME and PVERSION markers
+                    e.g. 'http://plugin-catalog/plugins/PNAME/PVERSION/PNAME.hpi'
+                    If not set, the URL defaults to the official url of the plugin
     -e FILE     Exec-hook - script to call when processing 3rd party plugins
-                    script will have access env vars PNAME, PVERSION, PURL, PFILE
+                    script will have access env vars:
+                    PNAME - the name of the plugin
+                    PVERSION - the version of the plugin
+                    PURL - the url as specified above
+                    PFILE - the path to the downloaded plugin (NOTE: empty if '-d' not used)
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
 
@@ -88,7 +93,6 @@ while getopts iIhv:xf:F:c:C:m:MrRsSt:VdD:e: opt; do
         d)  DOWNLOAD=1
             ;;
         D)  PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
-            DOWNLOAD=1
             ;;
         e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
@@ -432,7 +436,7 @@ cat << EOF
     yq "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
 
   Difference between current vs new plugins.yaml
-    diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}"
+    diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_SANITIZED#${CURRENT_DIR}/}"
 
   Dependency tree of processed plugins (as single line or indented multiline):
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}"
@@ -609,8 +613,7 @@ createPluginCatalogAndPluginsYaml() {
     pluginDest=
     if [ $DOWNLOAD -eq 1 ]; then
       pluginSrc="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
-      pluginFile=$(basename "${pluginSrc}")
-      pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginFile}"
+      pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/$(basename "${pluginSrc}")"
       # Copy to cache...
       mkdir -p $(dirname "${pluginDest}")
       info "Copying plugin from ${pluginSrc} -> ${pluginDest}"
@@ -619,7 +622,7 @@ createPluginCatalogAndPluginsYaml() {
 
     # pluginUrl defaults to the official online url
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
-      pluginUrl=$(PNAME="${pluginName}" PVERSION="${pluginVersion}" eval "echo \"${PLUGIN_CATALOG_OFFLINE_URL_BASE}/${pluginFile}\" 2> /dev/null")
+      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
     else
       pluginUrl=$(k=$pluginName jq --arg p "$pluginName" -r '.plugins[$p].url' "${TARGET_UC_ONLINE}")
     fi
@@ -627,7 +630,7 @@ createPluginCatalogAndPluginsYaml() {
     # Call exec hook if available...
     if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ]; then
       info "Calling exec-hook ${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}..."
-      PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="$pluginDest" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
+      PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="${pluginDest:-}" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
     fi
     k="$pluginName" u="$pluginUrl" yq -i '.configurations[].includePlugins += { env(k): { "url": env(u) }} | style="double" ..' "${targetFile}"
   done
