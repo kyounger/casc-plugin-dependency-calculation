@@ -243,6 +243,7 @@ createTargetDirs() {
 
   TARGET_PLUGIN_LIST_ALL_EXPECTED="${TARGET_GEN}/list-all-expected-in-controller.txt"
   TARGET_PLUGIN_DEPS_PROCESSED="${TARGET_GEN}/deps-processed.txt"
+  # TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_3RD="${TARGET_GEN}/deps-processed-tree-single-third-party-only.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE="${TARGET_GEN}/deps-processed-tree-multiline.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL="${TARGET_GEN}/deps-processed-non-top-level.txt"
@@ -429,7 +430,7 @@ cat << EOF
 ======================= Summary ====================================
 
   See the new files:
-    yq  "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
+    yq "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
 
   Difference between current vs new plugins.yaml
     diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}"
@@ -455,7 +456,7 @@ EOF
 cat << EOF
   Minimal plugins.yaml (if existed)
     yq "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
-    diff "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
+    diff -y "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
 
 EOF
   fi
@@ -512,61 +513,95 @@ isDependency() {
     || grep -qE "^$1$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
 }
 
+# processDepTreeNonCap() {
+#   local pList=$1
+#   local indent="${2:-}"
+#   local parentPrefix="${3:-}"
+#   local p=
+#   echo "Checking list '$pList'"
+#   for p in $pList; do
+#     local depList=
+#     local isNonCap=false
+#     if isBootstrapPlugin "$p"; then
+#       echo "Ignoring bootstrap '$p'"
+#       continue # don't need bootstrap plugins
+#     fi
+#     debug "${indent}$p"
+#     # processing deps decision
+#     if isCapPlugin "$p"; then
+#       echo "No processing CAP plugin depencies '$p'"
+#     else
+#       isNonCap=true
+#       depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
+#       if [ -n "$depList" ]; then
+#         processDepTreeNonCap "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
+#       fi
+#     fi
+#     # if there is a parentPrefix (the parent was non-CAP) OR it's non-CAP itself
+#     # we add the plugin to the list
+#     if [ -n "$parentPrefix" ] || $isNonCap; then
+#       echo "Adding ${parentPrefix}$p"
+#       echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_3RD}"
+#     fi
+#   done
+# }
+
 processDepTree() {
-    local pList=$1
-    local indent="${2:-}"
-    local parentPrefix="${3:-}"
-    for p in $pList; do
-      debug "${indent}$p"
-      echo "${indent}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE}"
-      depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
-      if [ -n "$depList" ]; then
-        processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
-      else
-        echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
-      fi
-    done
+  local pList=$1
+  local indent="${2:-}"
+  local parentPrefix="${3:-}"
+  local p=
+  for p in $pList; do
+    debug "${indent}$p"
+    echo "${indent}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE}"
+    depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
+    if [ -n "$depList" ]; then
+      processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
+    else
+      echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
+    fi
+  done
 }
 
 processDeps() {
-    local p=$1
-    local indent="${2:-}"
-    if ! grep -qE "^$p$" "${TARGET_PLUGIN_DEPS_PROCESSED}"; then
-      debug "${indent}Plugin: $p"
-      # processed
-      echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
-      # bootstrap plugins
-      if isBootstrapPlugin "$p"; then
-        if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
-          debug "${indent}Result - add bootstrap: $p"
-          echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-        else
-          debug "${indent}Result - ignore: $p (already in bootstrap)"
-        fi
+  local p=$1
+  local indent="${2:-}"
+  if ! grep -qE "^$p$" "${TARGET_PLUGIN_DEPS_PROCESSED}"; then
+    debug "${indent}Plugin: $p"
+    # processed
+    echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
+    # bootstrap plugins
+    if isBootstrapPlugin "$p"; then
+      if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
+        debug "${indent}Result - add bootstrap: $p"
+        echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
       else
-        if isCapPlugin "$p"; then
-          debug "${indent}Result - add non-bootstrap CAP plugin: $p"
-          echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-        else
-          debug "${indent}Result - add third-party plugin: $p"
-          echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-        fi
-        for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
-          # record ALL non-top-level plugins as dependencies for the categorisation afterwards
-          if ! grep -qE "^$dep$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"; then
-            echo $dep >> "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
-          fi
-          if isCapPlugin "$p"; then
-            debug "${indent}  Dependency: $dep (parent in CAP so no further processing)"
-          else
-            debug "${indent}  Dependency: $dep"
-            processDeps "${dep}" "${indent}  "
-          fi
-        done
+        debug "${indent}Result - ignore: $p (already in bootstrap)"
       fi
     else
-      debug "${indent}Plugin: $p (already processed)"
+      if isCapPlugin "$p"; then
+        debug "${indent}Result - add non-bootstrap CAP plugin: $p"
+        echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+      else
+        debug "${indent}Result - add third-party plugin: $p"
+        echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+      fi
+      for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
+        # record ALL non-top-level plugins as dependencies for the categorisation afterwards
+        if ! grep -qE "^$dep$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"; then
+          echo $dep >> "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+        fi
+        if isCapPlugin "$p"; then
+          debug "${indent}  Dependency: $dep (parent in CAP so no further processing)"
+        else
+          debug "${indent}  Dependency: $dep"
+          processDeps "${dep}" "${indent}  "
+        fi
+      done
     fi
+  else
+    debug "${indent}Plugin: $p (already processed)"
+  fi
 }
 
 processAllDeps() {
@@ -730,9 +765,10 @@ createPluginCatalogAndPluginsYaml() {
 
   # how about creating a minimal list?
   if [ ${MINIMAL_PLUGIN_LIST} -eq 1 ]; then
-    reducedPluginList="$(yq '.plugins[].id' target/2.401.2.6/mm/plugins.yaml)"
-    reducedList=1
+    reducedPluginList="${LIST_OF_PLUGINS_MULTILINE}"
     removeAllBootstrap
+    # processDepTreeNonCap "${reducedPluginList}"
+    reducedList=1
     reducePluginList
     cp "${TARGET_PLUGINS_YAML}" "$TARGET_PLUGINS_YAML_MINIMAL"
     for k in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_MINIMAL"); do
@@ -760,7 +796,9 @@ sortDepsByDepth() {
 }
 
 reducePluginList() {
+  info "Removing dependency plugins from main list..."
   while [ -n "${reducedList:-}" ]; do
+    info "Removing dependency plugins - iterating..."
     reducedList=
     depsSortedByDepth=$(sortDepsByDepth "$reducedPluginList")
     debug "====================================="
@@ -781,9 +819,11 @@ reducePluginList() {
         continue
       elif grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
         debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
-        childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
-          | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
-          | sort -u | xargs)
+        if grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"; then
+          childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
+            | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
+            | sort -u | xargs)
+        fi
         for childToRemove in $childrenToRemove; do
           if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
             debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
@@ -799,13 +839,14 @@ reducePluginList() {
 }
 
 removeAllBootstrap() {
-    for p in $reducedPluginList; do
-        if grep -qE "^($p)$" "${TARGET_ENVELOPE_BOOTSTRAP}"; then
-            echo "Removing bootstrap '$p' from main list..."
-            tmpReducedPluginList=$(grep -vE "^$p$" <<< "$reducedPluginList")
-            reducedPluginList=$tmpReducedPluginList
-        fi
-    done
+  info "Removing bootstrap plugins from main list..."
+  for p in $reducedPluginList; do
+    if grep -qE "^($p)$" "${TARGET_ENVELOPE_BOOTSTRAP}"; then
+      debug "Removing bootstrap '$p' from main list..."
+      tmpReducedPluginList=$(grep -vE "^$p$" <<< "$reducedPluginList")
+      reducedPluginList="$tmpReducedPluginList"
+    fi
+  done
 }
 
 runMainProgram() {
