@@ -752,6 +752,7 @@ createPluginCatalogAndPluginsYaml() {
 }
 
 sortDepsByDepth() {
+  local p= matchedLines=
   for p in $1; do
     matchedLines=$(grep -oE ".* -> $p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" | sed -e 's/\ $//' | sort -u)
     while IFS= read -r line; do
@@ -784,7 +785,7 @@ reducePluginList() {
         continue
       elif grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
         debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
-        if grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"; then
+        if grep -qE "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"; then
           childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
             | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
             | sort -u | xargs)
