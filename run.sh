@@ -243,7 +243,6 @@ createTargetDirs() {
 
   TARGET_PLUGIN_LIST_ALL_EXPECTED="${TARGET_GEN}/list-all-expected-in-controller.txt"
   TARGET_PLUGIN_DEPS_PROCESSED="${TARGET_GEN}/deps-processed.txt"
-  # TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_3RD="${TARGET_GEN}/deps-processed-tree-single-third-party-only.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE="${TARGET_GEN}/deps-processed-tree-multiline.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL="${TARGET_GEN}/deps-processed-non-top-level.txt"
@@ -513,39 +512,6 @@ isDependency() {
     || grep -qE "^$1$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
 }
 
-# processDepTreeNonCap() {
-#   local pList=$1
-#   local indent="${2:-}"
-#   local parentPrefix="${3:-}"
-#   local p=
-#   echo "Checking list '$pList'"
-#   for p in $pList; do
-#     local depList=
-#     local isNonCap=false
-#     if isBootstrapPlugin "$p"; then
-#       echo "Ignoring bootstrap '$p'"
-#       continue # don't need bootstrap plugins
-#     fi
-#     debug "${indent}$p"
-#     # processing deps decision
-#     if isCapPlugin "$p"; then
-#       echo "No processing CAP plugin depencies '$p'"
-#     else
-#       isNonCap=true
-#       depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
-#       if [ -n "$depList" ]; then
-#         processDepTreeNonCap "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
-#       fi
-#     fi
-#     # if there is a parentPrefix (the parent was non-CAP) OR it's non-CAP itself
-#     # we add the plugin to the list
-#     if [ -n "$parentPrefix" ] || $isNonCap; then
-#       echo "Adding ${parentPrefix}$p"
-#       echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_3RD}"
-#     fi
-#   done
-# }
-
 processDepTree() {
   local pList=$1
   local indent="${2:-}"
@@ -767,7 +733,6 @@ createPluginCatalogAndPluginsYaml() {
   if [ ${MINIMAL_PLUGIN_LIST} -eq 1 ]; then
     reducedPluginList="${LIST_OF_PLUGINS_MULTILINE}"
     removeAllBootstrap
-    # processDepTreeNonCap "${reducedPluginList}"
     reducedList=1
     reducePluginList
     cp "${TARGET_PLUGINS_YAML}" "$TARGET_PLUGINS_YAML_MINIMAL"
