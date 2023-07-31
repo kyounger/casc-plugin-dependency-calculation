@@ -186,6 +186,20 @@ cacheUpdateCenter() {
     mkdir -p $CB_UPDATE_CENTER_CACHE_DIR
     curl --fail -sSL -o "${CB_UPDATE_CENTER_CACHE_FILE}" "${CB_UPDATE_CENTER_URL_WITH_VERSION}"
   fi
+
+  [ $CHECK_CVES -eq 1 ] || return
+  #download update-center.actual.json file and cache it
+  if [[ -f "${CB_UPDATE_CENTER_ACTUAL}" ]] && [ $REFRESH_UC -eq 0 ]; then
+    info "$(basename ${CB_UPDATE_CENTER_ACTUAL}) already exist, remove it or use the '-R' flag" >&2
+  else
+    info "Caching UC actual.json to '$CB_UPDATE_CENTER_ACTUAL'"
+    mkdir -p $CB_UPDATE_CENTER_ACTUAL_CACHE_DIR
+    curl --fail -sSL -o "${CB_UPDATE_CENTER_ACTUAL}" "${JENKINS_UC_ACTUAL_URL}"
+    jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
+    jq -r '.name' "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}" | sort -u > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"
+    jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
+    rm -rf "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}."*.json
+  fi
 }
 
 prereqs() {
@@ -212,6 +226,10 @@ setScriptVars() {
   info "Setting CACHE_BASE_DIR=$CACHE_BASE_DIR"
   CB_UPDATE_CENTER_CACHE_DIR="$CACHE_BASE_DIR/$CI_VERSION/$CI_TYPE/update-center"
   CB_UPDATE_CENTER_CACHE_FILE="${CB_UPDATE_CENTER_CACHE_DIR}/update-center.json"
+  CB_UPDATE_CENTER_ACTUAL_CACHE_DIR="${CACHE_BASE_DIR}/update-center-actual"
+  CB_UPDATE_CENTER_ACTUAL="${CB_UPDATE_CENTER_ACTUAL_CACHE_DIR}/update-center.actual.json"
+  CB_UPDATE_CENTER_ACTUAL_WARNINGS="${CB_UPDATE_CENTER_ACTUAL}.plugins.warnings.json"
+
   PIMT_JAR_CACHE_DIR="$CACHE_BASE_DIR/pimt-jar"
   PLUGINS_CACHE_DIR="$CACHE_BASE_DIR/plugins"
 
@@ -250,13 +268,13 @@ createTargetDirs() {
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE="${TARGET_GEN}/deps-processed-tree-multiline.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL="${TARGET_GEN}/deps-processed-non-top-level.txt"
-  TARGET_PLUGIN_DEPENDENCY_RESULTS="${TARGET_GEN}/processed-deps-results.yaml"
+  TARGET_PLUGIN_DEPENDENCY_RESULTS="${TARGET_GEN}/deps-processed-results.yaml"
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
   TARGET_ALL="${TARGET_GEN}/pimt-with-plugins.yaml"
   TARGET_DIFF="${TARGET_GEN}/pimt-diff.yaml"
-  TARGET_UC_ACTUAL="${TARGET_GEN}/update-center.actual.json"
-  TARGET_UC_ACTUAL_WARNINGS="${TARGET_UC_ACTUAL}.plugins.warnings.json"
   TARGET_UC_ONLINE="${TARGET_GEN}/update-center-online.json"
+  TARGET_UC_ONLINE_ALL="${TARGET_UC_ONLINE}.plugins.all.txt"
+  TARGET_UC_ONLINE_ALL_WITH_URL="${TARGET_UC_ONLINE}.plugins.all-with-url.txt"
   TARGET_UC_ONLINE_ALL_WITH_VERSION="${TARGET_UC_ONLINE}.plugins.all-with-version.txt"
   TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS="${TARGET_UC_ONLINE}.tier.3rd-party.txt"
   TARGET_UC_ONLINE_DEPRECATED_PLUGINS="${TARGET_UC_ONLINE}.deprecated.txt"
@@ -341,7 +359,7 @@ copyOrExtractMetaInformation() {
 
   # create some info lists from the online update-center
   jq -r '.plugins[]|.name' \
-    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.plugins.all.txt"
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_ALL}"
   jq -r '.plugins[]|"\(.name):\(.dependencies[]|select(.optional == false)|.name)"' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_REQUIRED_DEPS}"
   jq -r '.plugins[]|"\(.name):\(.dependencies[]|select(.optional == true)|.name)"' \
@@ -350,6 +368,8 @@ copyOrExtractMetaInformation() {
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all-with-version.txt"
   jq -r '.plugins[]|"\(.name):\(.version)"' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_ALL_WITH_VERSION}"
+  jq -r '.plugins[]|"\(.name)|\(.url)"' \
+    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_ALL_WITH_URL}"
   jq -r '.envelope.plugins[]|select(.tier|test("(compatible)"))|.artifactId' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.compatible.txt"
   jq -r '.envelope.plugins[]|select(.tier|test("(proprietary)"))|.artifactId' \
@@ -358,74 +378,16 @@ copyOrExtractMetaInformation() {
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.tier.verified.txt"
   jq -r '.plugins[]|select((.labels != null) and (.labels[]|index("deprecated")) != null).name' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
-  comm -13 "${TARGET_ENVELOPE_ALL_CAP}" "${TARGET_UC_ONLINE}.plugins.all.txt" \
+  comm -13 "${TARGET_ENVELOPE_ALL_CAP}" "${TARGET_UC_ONLINE_ALL}" \
     > "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"
 }
 
 staticCheckOfRequiredPlugins() {
   # Static check: loop through plugins and ensure they exist in the downloaded update-center
   debug "Plugins in ${TARGET_UC_ONLINE}:"
-  debug "$(jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | sort)"
-  PLUGINS_MISSING_ONLINE=''
-  for p in $LIST_OF_PLUGINS; do
-    # do not use 'grep -q' to avoid the "The Infamous SIGPIPE Signal" http://www.tldp.org/LDP/lpg/node20.html
-    jq -r '.plugins[].name' "${TARGET_UC_ONLINE}" | grep -E "^${p}$" &> /dev/null \
-    || { [ $? -eq 1 ] && PLUGINS_MISSING_ONLINE="${PLUGINS_MISSING_ONLINE} ${p}" || die "Plugin grep search failed somehow. bash -x to see..."; }
-  done
+  debug "${TARGET_UC_ONLINE_ALL}"
+  PLUGINS_MISSING_ONLINE=$(comm -23 "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT}" "${TARGET_UC_ONLINE_ALL}" | xargs)
   [ -z "${PLUGINS_MISSING_ONLINE}" ] || die "PLUGINS_MISSING_ONLINE:${PLUGINS_MISSING_ONLINE}"
-}
-
-createPluginListsWithPIMT() {
-  #run PIMT and reformat output to get the variable part
-  if [ -z "${JENKINS_UC_HASH_FUNCTION:-}" ]; then
-    export JENKINS_UC_HASH_FUNCTION="SHA1"
-    warn "Using the deprecated JENKINS_UC_HASH_FUNCTION=$JENKINS_UC_HASH_FUNCTION for backwards compatibility. Try setting to SHA256 for better security, or set explicitly to SHA1 to remove this message."
-  fi
-  [ $VERBOSE_LOG -eq 0 ] && PIMT_VERBOSE= || PIMT_VERBOSE=--verbose
-  [ $DOWNLOAD -eq 0 ] && PIMT_DOWNLOAD=--no-download || PIMT_DOWNLOAD="-d $TARGET_PLUGINS_DIR"
-
-  PIMT_OPTIONS=(
-    -jar "$PIMT_JAR_CACHE_FILE" \
-    --list \
-    --view-security-warnings \
-    $PIMT_DOWNLOAD \
-    --jenkins-version $CI_VERSION \
-    --output YAML \
-    --jenkins-update-center "${CB_UPDATE_CENTER_URL}" \
-    $PIMT_VERBOSE)
-
-  info "Getting default plugins list (${TARGET_NONE})"
-  info "Running command... java ${PIMT_OPTIONS[@]}"
-  if java "${PIMT_OPTIONS[@]}" > "${TARGET_NONE}" 2> "${TARGET_NONE}${STDERR_LOG_SUFFIX}"; then
-    debug "$(cat "${TARGET_NONE}${STDERR_LOG_SUFFIX}")"
-  else
-    cat "${TARGET_NONE}${STDERR_LOG_SUFFIX}"
-    die "Couldn't create list of plugins. See above."
-  fi
-
-  info "Getting default plugins list after including plugins (${TARGET_ALL})"
-  # NOTE: if you don't specify the plugin versions, it will try to process the latest
-  local LIST_OF_PLUGINS_WITH_VERSIONS=
-  for p in $LIST_OF_PLUGINS; do
-    LIST_OF_PLUGINS_WITH_VERSIONS="${LIST_OF_PLUGINS_WITH_VERSIONS} $(grep "^$p:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}")"
-  done
-  if java "${PIMT_OPTIONS[@]}" --plugins $(echo "$LIST_OF_PLUGINS_WITH_VERSIONS" | xargs) > "${TARGET_ALL}" 2> "${TARGET_ALL}${STDERR_LOG_SUFFIX}"; then
-    debug "$(cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}")"
-  else
-    cat "${TARGET_ALL}${STDERR_LOG_SUFFIX}"
-    die "Couldn't create list of plugins. See above."
-  fi
-
-  info "Generating diff by removing all bundled plugins (${TARGET_DIFF})"
-  cp "${TARGET_ALL}" "${TARGET_DIFF}"
-  for k in $(cat "${TARGET_ENVELOPE_ALL_CAP}"); do
-    k=$k yq -i 'del(.plugins[] | select(.artifactId == env(k)))' "${TARGET_DIFF}"
-  done
-  # sanitise pimt result files
-  yq -i '.plugins|=sort_by(.artifactId)|... comments=""' "${TARGET_NONE}"
-  yq -i '.plugins|=sort_by(.artifactId)|... comments=""' "${TARGET_ALL}"
-  yq -i '.plugins|=sort_by(.artifactId)|... comments=""' "${TARGET_DIFF}"
-
 }
 
 showSummaryResult() {
@@ -483,27 +445,34 @@ isDeprecatedPlugin() {
 
 isNotAffectedByCVE() {
   if [ $CHECK_CVES -eq 1 ]; then
-    # retrieve actual json if needed
-    if [ ! -f "${TARGET_UC_ACTUAL}" ]; then
-      curl --fail -sSL -o "${TARGET_UC_ACTUAL}" "$JENKINS_UC_ACTUAL_URL"
-      jq '.warnings[]|select(.type == "plugin")' "${TARGET_UC_ACTUAL}" > "${TARGET_UC_ACTUAL_WARNINGS}"
+    # if no CVEs at all for plugin, return 0
+    if ! grep -qE "^${1}$" "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"; then
+      return
     fi
     # create plugin specific warning json
-    local pWarnings="${TARGET_UC_ACTUAL_WARNINGS}.${1}.json"
-    jq --arg p "$1" 'select(.name == $p)' "${TARGET_UC_ACTUAL_WARNINGS}" > "${pWarnings}"
+    local pWarnings="${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.${1}.json"
+    if [ ! -f "$pWarnings" ]; then
+      debug "Plugin '$1' - creating security json..."
+      jq --arg p "$1" 'select(.name == $p)' "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}" > "${pWarnings}"
+    fi
     # go through each security warning
     local pluginVersion=''
     pluginVersion=$(grep "^$1:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d':' -f 2)
     for w in $(jq -r '.id' "${pWarnings}"); do
       debug "Plugin '$1' - checking security issue '$w'"
-      for pattern in $(jq --arg w "$w" 'select(.id == $w).versions[].pattern' "${TARGET_UC_ACTUAL_WARNINGS}"); do
+      local isAffected=
+      for pattern in $(jq --arg w "$w" 'select(.id == $w).versions[].pattern' "${pWarnings}"); do
         patternNoQuotes=${pattern//\"/}
         debug "Plugin '$1' - testing version '$pluginVersion' against pattern '$patternNoQuotes' from file '$pWarnings'"
         if [[ "$pluginVersion" =~ ^($patternNoQuotes)$ ]]; then
           info "Plugin '$1' - affected by '$w' according to pattern '$patternNoQuotes' from file '$(basename $pWarnings)'"
-          return 1
+          isAffected=1
         fi
       done
+      if [ -n "$isAffected" ]; then
+        cp "${pWarnings}" "${TARGET_GEN}"
+        return 1
+      fi
     done
   fi
 }
@@ -526,7 +495,11 @@ processDepTree() {
     echo "${indent}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE}"
     depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
     if [ -n "$depList" ]; then
-      processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
+      if ! isBootstrapPlugin "$p"; then
+        processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
+      else
+        echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
+      fi
     else
       echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
     fi
@@ -575,6 +548,7 @@ processDeps() {
 }
 
 processAllDeps() {
+  info "Calculating dependencies..."
   # empty the processed lists
   echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED}"
   echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
@@ -584,47 +558,57 @@ processAllDeps() {
   [ $INCLUDE_OPTIONAL -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
 
   # process deps
+  local p=
   for p in $LIST_OF_PLUGINS; do
       processDeps $p
   done
-  debug "Processing dependency tree:"
-  processDepTree "${LIST_OF_PLUGINS}"
+  sort -o "${TARGET_PLUGIN_DEPS_PROCESSED}" "${TARGET_PLUGIN_DEPS_PROCESSED}"
+  info "Processing dependency tree..."
+  processDepTree "$(yq '.plugins[].id' ${TARGET_PLUGIN_DEPENDENCY_RESULTS})"
 }
 
 createPluginCatalogAndPluginsYaml() {
+  # process dependencies
+  processAllDeps
+
+  # get the 3rd party plugins by removing all CAP plugins from list of processed dependencies
+  NON_CAP_PLUGINS=$(comm -23 "${TARGET_PLUGIN_DEPS_PROCESSED}" "${TARGET_ENVELOPE_ALL_CAP}")
+
   export descriptionVer="These are Non-CAP plugins for version $CI_VERSION"
   export productVersion="[$CI_VERSION]"
   info "Recreate plugin-catalog"
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
   yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
-  for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
-    pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
+  for pluginName in $NON_CAP_PLUGINS; do
+    info "Adding plugin '$pluginName'"
+    pluginVersion=$(grep "^$pluginName:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d: -f2)
     k="$pluginName" v="$pluginVersion" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${targetFile}"
   done
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
   yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
-  for pluginName in $(yq '.plugins[].artifactId' "${TARGET_DIFF}"); do
-    pluginVersion=$(k=$pluginName yq '.plugins[]|select(.artifactId == env(k)).source.version' "${TARGET_DIFF}")
+  for pluginName in $NON_CAP_PLUGINS; do
+    info "Adding OFFLINE plugin '$pluginName'"
+    pluginVersion=$(grep "^$pluginName:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d: -f2)
+    # pluginUrl defaults to the official online url
+    local pluginUrlOfficial=$(grep "^$pluginName|.*$" "${TARGET_UC_ONLINE_ALL_WITH_URL}" | cut -d'|' -f2)
+    if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
+      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
+    else
+      pluginUrl="$pluginUrlOfficial"
+    fi
 
     # if the plugins were downloaded, copy and create an offline plugin catalog
     pluginDest=
     if [ $DOWNLOAD -eq 1 ]; then
-      pluginSrc="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
+      pluginUrl="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
       pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/$(basename "${pluginSrc}")"
       # Copy to cache...
       mkdir -p $(dirname "${pluginDest}")
-      info "Copying plugin from ${pluginSrc} -> ${pluginDest}"
-      cp "${pluginSrc}" "${pluginDest}"
-    fi
-
-    # pluginUrl defaults to the official online url
-    if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
-      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
-    else
-      pluginUrl=$(k=$pluginName jq --arg p "$pluginName" -r '.plugins[$p].url' "${TARGET_UC_ONLINE}")
+      info "Downloading plugin from ${pluginUrlOfficial} -> ${pluginDest}"
+      curl -sL "${pluginUrlOfficial}" -o "${pluginDest}"
     fi
 
     # Call exec hook if available...
@@ -635,8 +619,6 @@ createPluginCatalogAndPluginsYaml() {
     k="$pluginName" u="$pluginUrl" yq -i '.configurations[].includePlugins += { env(k): { "url": env(u) }} | style="double" ..' "${targetFile}"
   done
 
-  # process dependencies
-  processAllDeps
 
   #temporarily reformat each file to allow a proper yaml merge
   yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > $TARGET_GEN/temp0.yaml
@@ -656,6 +638,7 @@ createPluginCatalogAndPluginsYaml() {
   cp "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_SANITIZED}"
 
   # Add metadata comments
+  info "Adding metadata comments..."
   if [ -n "${PLUGIN_YAML_COMMENTS_STYLE}" ]; then
     # Header...
     case "${PLUGIN_YAML_COMMENTS_STYLE}" in
@@ -677,6 +660,7 @@ createPluginCatalogAndPluginsYaml() {
     # Plugin comments...
     considerForPotentialRemoval=""
     for p in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML"); do
+      info "Adding comments for plugin '$p'"
       export pStr=""
       isCapPlugin "$p" && pStr="${pStr} cap" || pStr="${pStr} 3rd"
       isListed "$p" && pStr="${pStr} lst"
@@ -734,7 +718,7 @@ createPluginCatalogAndPluginsYaml() {
 
   # how about creating a minimal list?
   if [ ${MINIMAL_PLUGIN_LIST} -eq 1 ]; then
-    reducedPluginList="${LIST_OF_PLUGINS_MULTILINE}"
+    reducedPluginList=$(yq '.plugins[].id' "$TARGET_PLUGINS_YAML")
     removeAllBootstrap
     reducedList=1
     reducePluginList
@@ -820,12 +804,10 @@ removeAllBootstrap() {
 
 runMainProgram() {
   setScriptVars
-  cachePimtJar
   cacheUpdateCenter
   createTargetDirs
   copyOrExtractMetaInformation
   staticCheckOfRequiredPlugins
-  createPluginListsWithPIMT
   createPluginCatalogAndPluginsYaml
   showSummaryResult
 }
