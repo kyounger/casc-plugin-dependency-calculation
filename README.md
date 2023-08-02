@@ -7,47 +7,27 @@ Give this script a path to a `plugins.yaml` file in a bundle with all plugins yo
 
 This means that as long as you are willing to use the plugin versions in the CloudBees Update Centers (which you should be doing), then all you ever need to do is add plugins to the `plugins.yaml` file and this script will handle the rest. No more manually crafting plugin catalogs!
 
-## :information_source: Upcoming removal of war file and docker dependency
+## :information_source: Removal of plugin-installation-manager-tool dependency
 
-This branch will soon use an updated version of the `run.sh` script which no longer uses the war file. The last release including this will be `v1.0.0`.
+The plugin installation manager tool is no longer needed, since CloudBees update centers come with a pre-determined set of plugin versions for CAP plugins.
 
-Removal of the war file dependency brings a number of advantages:
+Removal of this dependency results in:
 
 - less network bandwidth
-    - no need to download the docker image for modern installations
-    - no need to download the war file for traditional installations
 - reduced execution time
-- easier to integrate into pipelines since the dependency on docker has been removed
-
-### Changes versus the old method
-
-There are no changes in the resulting `plugins.yaml`, `plugin-catalog.yaml`, or `plugin-catalog-offline.yaml` files.
-
-However, since the war file is no longer available, the meta information regarding the "Initial installation wizard" where the option "Install suggested" is given, for example:
-
-```sh
-❯ ls -1 target/2.387.2.4/mm/generated/platform-plugins.json*
-target/2.387.2.4/mm/generated/platform-plugins.json
-target/2.387.2.4/mm/generated/platform-plugins.json.wizard-all.txt
-target/2.387.2.4/mm/generated/platform-plugins.json.wizard-non-suggested.txt
-target/2.387.2.4/mm/generated/platform-plugins.json.wizard-suggested.txt
-```
-
-If it is still needed in the current development, please create an issue to reinstate the option to use the war file.
-
-Otherwise it is strongly recommended to use the new version.
 
 ## New Features
 
+- **minimal plugin list** - create a minimal viable list of plugins based on a starting list. See `-s` for more details.
 - **multiple CBCI versions** - create a master plugin catalog for multiple CBCI versions
 - **multiple source files** - create a master plugin catalog from multiple source files
 - **metadata** - option to include metadata as a comment in the `plugins.yaml`
 - **final target locations** - option to set specific target locations for final files
 - **bootstrap or optional plugins** - improved plugin dependency management for more accurate `plugins.yaml`
-    - include optional dependencies per flag
-    - include bootstrap dependencies per flag
+  - include optional dependencies per flag
+  - include bootstrap dependencies per flag
 - **exec hooks** - ability to run `exec-hooks` for plugin post-processing
-    - ability to create air-gapped `plugin-catalog-offline.yaml` files
+  - ability to create air-gapped `plugin-catalog-offline.yaml` files
 - **simple cache** - rudimentary plugin-cache for holding plugins without an artifact repository manager
 
 ## Requirements
@@ -70,15 +50,21 @@ Usage: run.sh -v <CI_VERSION> [OPTIONS]
     -t          The instance type (oc, oc-traditional, cm, mm)
 
     -F FILE     Final target of the resulting plugins.yaml
+    -G FILE     Final target of the resulting plugins-minimal.yaml
     -c FILE     Final target of the resulting plugin-catalog.yaml
     -C FILE     Final target of the resulting plugin-catalog-offline.yaml
 
     -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
     -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
-                    e.g. 'http://plugin-catalog/plugins/$PNAME/$PVERSION'
-                    defaults to the official url of the plugin
+                    This make use of the PNAME and PVERSION markers
+                    e.g. 'http://plugin-catalog/plugins/PNAME/PVERSION/PNAME.hpi'
+                    If not set, the URL defaults to the official url of the plugin
     -e FILE     Exec-hook - script to call when processing 3rd party plugins
-                    script will have access env vars PNAME, PVERSION, PURL, PFILE
+                    script will have access env vars:
+                    PNAME - the name of the plugin
+                    PVERSION - the version of the plugin
+                    PURL - the url as specified above
+                    PFILE - the path to the downloaded plugin (NOTE: empty if '-d' not used)
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
 
@@ -86,9 +72,9 @@ Usage: run.sh -v <CI_VERSION> [OPTIONS]
     -I          Include bootstrap dependencies in the plugins.yaml
     -m STYLE    Include plugin metadata as comment (line, header, footer, none)
                     defaults to 'line'
+    -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
     -S          Disable CVE check against plugins (added to metadata)
 
-    -r          Refresh the downloaded wars/jars (no-cache)
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
 ```
@@ -173,7 +159,7 @@ The log will look something like this:
 INFO: ==============================================================
 INFO: !!! Candidates for potential removal from the plugins.yaml !!!
 INFO: ==============================================================
-INFO: The following plugins are dependencies of CAP plugins:  aws-credentials  aws-java-sdk-ec2  aws-java-sdk-minimal  branch-api  cloudbees-casc-items-api  cloudbees-casc-items-commons  git  git-client  github-api  mina-sshd-api-common  mina-sshd-api-core  mina-sshd-api-sftp  pipeline-graph-analysis  pipeline-groovy-lib  pipeline-input-step  pipeline-rest-api  pipeline-stage-tags-metadata  workflow-basic-steps  workflow-multibranch 
+INFO: The following plugins are dependencies of CAP plugins:  aws-credentials  aws-java-sdk-ec2  aws-java-sdk-minimal  branch-api  cloudbees-casc-items-api  cloudbees-casc-items-commons  git  git-client  github-api  mina-sshd-api-common  mina-sshd-api-core  mina-sshd-api-sftp  pipeline-graph-analysis  pipeline-groovy-lib  pipeline-input-step  pipeline-rest-api  pipeline-stage-tags-metadata  workflow-basic-steps  workflow-multibranch
 INFO: For more details run: p=<PLUGIN_TO_CHECK>; grep -E ".* -> $p($| )" "target/2.401.2.3/mm/generated/deps-processed-tree-single.txt"
 INFO:   aws-credentials provided by: infradna-backup
 INFO:   aws-java-sdk-ec2 provided by: aws-credentials infradna-backup
@@ -219,9 +205,9 @@ Multiple runs taking advantage of caching and generating multiple different `plu
 
 - This will NOT update your `plugins.yaml` file unless you specify the `-x` flag.
 - This process caches all resources that it fetches under a `.cache` directory in the PWD. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
-    - `jenkins.war` from the docker image
-    - `jenkins-plugin-manager.jar` download from github releases
-    - `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
+  - `jenkins.war` from the docker image
+  - `jenkins-plugin-manager.jar` download from github releases
+  - `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
 
 ## Advanced
 
