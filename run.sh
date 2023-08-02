@@ -553,6 +553,19 @@ isDependency() {
     || grep -qE ".* -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" && return 0 || return 1
 }
 
+isCandidateForRemoval() {
+  # assumption: all direct parents are CAP plugins
+  local possibleParents=
+  possibleParents=$(grep -oE "([a-zA-Z0-9\-]*) -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}")
+  for pp in $(echo "$possibleParents" | sed 's/ -> / /g' | cut -d ' ' -f 1 | sort -u); do
+    if ! isCapPlugin "$pp"; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+
 addToDeps() {
   local newEntry=$1
   local newKey="${1// */}"
@@ -799,7 +812,7 @@ createPluginCatalogAndPluginsYaml() {
       isDependency "$p" && pStr="${pStr} dep"
       isDeprecatedPlugin "$p" && pStr="${pStr} old"
       isNotAffectedByCVE "$p" || pStr="${pStr} cve"
-      if [[ "$pStr" =~ cap.*dep ]]; then
+      if [[ "$pStr" =~ cap.*dep ]] && isCandidateForRemoval "$p"; then
         considerForPotentialRemoval="$considerForPotentialRemoval $p "
       fi
       case "${PLUGIN_YAML_COMMENTS_STYLE}" in
