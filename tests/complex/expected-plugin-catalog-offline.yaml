@@ -1,0 +1,87 @@
+type: "plugin-catalog"
+version: "1"
+name: "my-plugin-catalog"
+displayName: "My Offline Plugin Catalog"
+configurations:
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
+    includePlugins:
+      ansicolor:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ansicolor/1.0.2/ansicolor.hpi"
+      artifactory:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/artifactory/3.18.5/artifactory.hpi"
+      aws-java-sdk:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk/1.12.406-374.v4cdf53953691/aws-java-sdk.hpi"
+      aws-java-sdk-cloudformation:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-cloudformation/1.12.406-374.v4cdf53953691/aws-java-sdk-cloudformation.hpi"
+      aws-java-sdk-codebuild:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-codebuild/1.12.406-374.v4cdf53953691/aws-java-sdk-codebuild.hpi"
+      aws-java-sdk-ecr:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-ecr/1.12.406-374.v4cdf53953691/aws-java-sdk-ecr.hpi"
+      aws-java-sdk-ecs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-ecs/1.12.406-374.v4cdf53953691/aws-java-sdk-ecs.hpi"
+      aws-java-sdk-efs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-efs/1.12.406-374.v4cdf53953691/aws-java-sdk-efs.hpi"
+      aws-java-sdk-iam:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-iam/1.12.406-374.v4cdf53953691/aws-java-sdk-iam.hpi"
+      aws-java-sdk-logs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-logs/1.12.406-374.v4cdf53953691/aws-java-sdk-logs.hpi"
+      aws-java-sdk-sns:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-sns/1.12.406-374.v4cdf53953691/aws-java-sdk-sns.hpi"
+      aws-java-sdk-sqs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-sqs/1.12.406-374.v4cdf53953691/aws-java-sdk-sqs.hpi"
+      aws-java-sdk-ssm:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-ssm/1.12.406-374.v4cdf53953691/aws-java-sdk-ssm.hpi"
+      badge:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/badge/1.9.1/badge.hpi"
+      build-failure-analyzer:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/build-failure-analyzer/2.4.1/build-failure-analyzer.hpi"
+      build-monitor-plugin:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/build-monitor-plugin/1.14-681.vd6817317a_2b_7/build-monitor-plugin.hpi"
+      cobertura:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/cobertura/1.17/cobertura.hpi"
+      code-coverage-api:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/code-coverage-api/4.4.0/code-coverage-api.hpi"
+      configuration-as-code-groovy:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/configuration-as-code-groovy/1.1/configuration-as-code-groovy.hpi"
+      ec2-fleet:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ec2-fleet/2.7.1/ec2-fleet.hpi"
+      envinject:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/envinject/2.901.v0038b_6471582/envinject.hpi"
+      envinject-api:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/envinject-api/1.199.v3ce31253ed13/envinject-api.hpi"
+      gerrit-trigger:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/gerrit-trigger/2.39.0/gerrit-trigger.hpi"
+      h2-api:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/h2-api/11.1.4.199-12.v9f4244395f7a_/h2-api.hpi"
+      hashicorp-vault-plugin:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/hashicorp-vault-plugin/360.v0a_1c04cf807d/hashicorp-vault-plugin.hpi"
+      ivy:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ivy/2.4/ivy.hpi"
+      job-dsl:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/job-dsl/1.83/job-dsl.hpi"
+      parameterized-scheduler:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/parameterized-scheduler/1.2/parameterized-scheduler.hpi"
+      parameterized-trigger:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/parameterized-trigger/2.45/parameterized-trigger.hpi"
+      pipeline-maven:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/pipeline-maven/1274.v870c8cb_fa_369/pipeline-maven.hpi"
+      pipeline-utility-steps:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/pipeline-utility-steps/2.15.1.1/pipeline-utility-steps.hpi"
+      prometheus:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/prometheus/2.2.3/prometheus.hpi"
+      resource-disposer:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/resource-disposer/0.22/resource-disposer.hpi"
+      robot:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/robot/3.4.0/robot.hpi"
+      slack:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/slack/664.vc9a_90f8b_c24a_/slack.hpi"
+      swarm:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/swarm/3.40/swarm.hpi"
+      throttle-concurrents:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/throttle-concurrents/2.13/throttle-concurrents.hpi"
+      uno-choice:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/uno-choice/2.6.5/uno-choice.hpi"
+      ws-cleanup:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ws-cleanup/0.45/ws-cleanup.hpi"
