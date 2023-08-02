@@ -11,7 +11,6 @@ INCLUDE_BOOTSTRAP=0
 INCLUDE_OPTIONAL=0
 DOWNLOAD=0
 VERBOSE_LOG=0
-REFRESH=0
 REFRESH_UC=0
 MINIMAL_PLUGIN_LIST="${MINIMAL_PLUGIN_LIST:-0}"
 DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
@@ -64,7 +63,6 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
     -S          Disable CVE check against plugins (added to metadata)
 
-    -r          Refresh the downloaded wars/jars (no-cache)
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
 
@@ -80,7 +78,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts iIhv:xf:F:G:c:C:m:MrRsSt:VdD:e: opt; do
+while getopts iIhv:xf:F:G:c:C:m:MRsSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -116,8 +114,6 @@ while getopts iIhv:xf:F:G:c:C:m:MrRsSt:VdD:e: opt; do
         m)  PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
             ;;
         M)  DEDUPLICATE_PLUGINS=1
-            ;;
-        r)  REFRESH=1
             ;;
         R)  REFRESH_UC=1
             ;;
@@ -160,24 +156,6 @@ die() {
 
 extractAndFormat() {
   cat "${1}" | sed 's/.*\post(//' | sed 's/);\w*$//' | jq .
-}
-
-cachePimtJar() {
-  mkdir -p $PIMT_JAR_CACHE_DIR
-  PIMT_INFO_JSON=$(curl --fail -sL \
-    -H "Accept: application/vnd.github.v3+json" \
-    https://api.github.com/repos/jenkinsci/plugin-installation-manager-tool/releases/latest)
-  PIMT_JAR_FILE=$(echo "$PIMT_INFO_JSON" | yq e '.assets[0].name' -)
-  PIMT_JAR_URL=$(echo "$PIMT_INFO_JSON" | yq e '.assets[0].browser_download_url' -)
-  PIMT_JAR_CACHE_FILE="$PIMT_JAR_CACHE_DIR/$PIMT_JAR_FILE"
-
-  #download pimt jar file and cache it
-  if [[ -f "$PIMT_JAR_CACHE_FILE" ]] && [ $REFRESH -eq 0 ]; then
-    info "$(basename "$PIMT_JAR_CACHE_FILE") already exist, remove it or use the '-r' flag" >&2
-  else
-    info "Caching PIMT JAR to '$PIMT_JAR_CACHE_FILE'"
-    curl --fail -sSL -o "$PIMT_JAR_CACHE_FILE" $PIMT_JAR_URL
-  fi
 }
 
 cacheUpdateCenter() {
