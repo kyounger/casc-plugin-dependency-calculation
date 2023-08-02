@@ -4,6 +4,7 @@ set -euo pipefail
 
 # Initialize our own variables:
 INDENT_SPACING='  '
+ADD_TS="${ADD_TS:-0}"
 STDERR_LOG_SUFFIX='.stderr.log'
 CHECK_CVES=1
 INCLUDE_BOOTSTRAP=0
@@ -38,6 +39,7 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -t          The instance type (oc, oc-traditional, cm, mm)
 
     -F FILE     Final target of the resulting plugins.yaml
+    -G FILE     Final target of the resulting plugins-minimal.yaml
     -c FILE     Final target of the resulting plugin-catalog.yaml
     -C FILE     Final target of the resulting plugin-catalog-offline.yaml
 
@@ -78,7 +80,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts iIhv:xf:F:c:C:m:MrRsSt:VdD:e: opt; do
+while getopts iIhv:xf:F:G:c:C:m:MrRsSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -100,6 +102,8 @@ while getopts iIhv:xf:F:c:C:m:MrRsSt:VdD:e: opt; do
             PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
         F)  FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
+            ;;
+        G)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL=$OPTARG
             ;;
         c)  FINAL_TARGET_PLUGIN_CATALOG=$OPTARG
             ;;
@@ -131,27 +135,26 @@ shift "$((OPTIND-1))"   # Discard the options and sentinel --
 
 # debug
 debug() {
-  [ $VERBOSE_LOG -eq 0 ] || cat <<< "DEBUG: $@" 1>&2
+  [ $VERBOSE_LOG -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $@" 1>&2
 }
 
-# echo to stderr so as to send it to null if needed
-echoerr() {
-  cat <<< "$@" 1>&2
+timestampMe() {
+  [ $ADD_TS -eq 0 ] || date -u +"%H:%M:%S "
 }
 
 # echo to stderr
 info() {
-  cat <<< "INFO: $@" 1>&2
+  cat <<< "$(timestampMe)INFO: $@" 1>&2
 }
 
 # echo to stderr
 warn() {
-  cat <<< "WARN: $@" 1>&2
+  cat <<< "$(timestampMe)WARN: $@" 1>&2
 }
 
 # echo to stderr and exit 1
 die() {
-  cat <<< "ERROR: $@" 1>&2
+  cat <<< "$(timestampMe)ERROR: $@" 1>&2
   exit 1
 }
 
@@ -187,7 +190,7 @@ cacheUpdateCenter() {
     curl --fail -sSL -o "${CB_UPDATE_CENTER_CACHE_FILE}" "${CB_UPDATE_CENTER_URL_WITH_VERSION}"
   fi
 
-  [ $CHECK_CVES -eq 1 ] || return
+  [ $CHECK_CVES -eq 1 ] || return 0
   #download update-center.actual.json file and cache it
   if [[ -f "${CB_UPDATE_CENTER_ACTUAL}" ]] && [ $REFRESH_UC -eq 0 ]; then
     info "$(basename ${CB_UPDATE_CENTER_ACTUAL}) already exist, remove it or use the '-R' flag" >&2
@@ -235,6 +238,7 @@ setScriptVars() {
 
   # final location stuff
   FINAL_TARGET_PLUGIN_YAML_PATH="${FINAL_TARGET_PLUGIN_YAML_PATH:-}"
+  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL="${FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL:-}"
   FINAL_TARGET_PLUGIN_CATALOG="${FINAL_TARGET_PLUGIN_CATALOG:-}"
   FINAL_TARGET_PLUGIN_CATALOG_OFFLINE="${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}"
 
@@ -266,7 +270,6 @@ createTargetDirs() {
   TARGET_PLUGIN_LIST_ALL_EXPECTED="${TARGET_GEN}/list-all-expected-in-controller.txt"
   TARGET_PLUGIN_DEPS_PROCESSED="${TARGET_GEN}/deps-processed.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
-  TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE="${TARGET_GEN}/deps-processed-tree-multiline.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL="${TARGET_GEN}/deps-processed-non-top-level.txt"
   TARGET_PLUGIN_DEPENDENCY_RESULTS="${TARGET_GEN}/deps-processed-results.yaml"
   TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
@@ -332,7 +335,17 @@ copyOrExtractMetaInformation() {
   # copy again and sanitize (better for comparing later)
   cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}"
   yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}"
-  yq '.plugins[].id' "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}" > "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT}"
+  yq '.plugins[].id' "${TARGET_PLUGINS_YAML_ORIG_SANITIZED}" | sort > "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT}"
+  # caching internally
+  # using associative array everywhere for easy access and performance
+  # if no value available. the key is used as the value
+  unset TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR
+  declare -g -A TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR
+  while IFS=: read -r key value; do
+      TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR["$key"]="${value:=$key}"
+  done < "$TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT"
+
+
   # same for the plugin-catalog.yaml (if it exists)
   if [ -f "${PLUGIN_CATALOG_PATH}" ]; then
     cp "${PLUGIN_CATALOG_PATH}" "${TARGET_PLUGIN_CATALOG_ORIG}"
@@ -364,8 +377,6 @@ copyOrExtractMetaInformation() {
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_REQUIRED_DEPS}"
   jq -r '.plugins[]|"\(.name):\(.dependencies[]|select(.optional == true)|.name)"' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_OPTIONAL_DEPS}"
-  jq -r '.envelope.plugins[]|"\(.artifactId):\(.version)"' \
-    "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE}.envelope.all-with-version.txt"
   jq -r '.plugins[]|"\(.name):\(.version)"' \
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_ALL_WITH_VERSION}"
   jq -r '.plugins[]|"\(.name)|\(.url)"' \
@@ -380,6 +391,64 @@ copyOrExtractMetaInformation() {
     "${TARGET_UC_ONLINE}" | sort > "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
   comm -13 "${TARGET_ENVELOPE_ALL_CAP}" "${TARGET_UC_ONLINE_ALL}" \
     > "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"
+
+  # caching internally
+  # using associative array everywhere for easy access and performance
+  # if no value available. the key is used as the value
+  unset TARGET_ENVELOPE_BOOTSTRAP_ARR
+  declare -g -A TARGET_ENVELOPE_BOOTSTRAP_ARR
+  while IFS=: read -r key value; do
+      TARGET_ENVELOPE_BOOTSTRAP_ARR["$key"]="${value:=$key}"
+  done < "$TARGET_ENVELOPE_BOOTSTRAP"
+
+  unset TARGET_ENVELOPE_NON_BOOTSTRAP_ARR
+  declare -g -A TARGET_ENVELOPE_NON_BOOTSTRAP_ARR
+  while IFS=: read -r key value; do
+      TARGET_ENVELOPE_NON_BOOTSTRAP_ARR["$key"]="${value:=$key}"
+  done < "${TARGET_ENVELOPE_NON_BOOTSTRAP}"
+
+  unset TARGET_ENVELOPE_ALL_CAP_ARR
+  declare -g -A TARGET_ENVELOPE_ALL_CAP_ARR
+  while IFS=: read -r key value; do
+      TARGET_ENVELOPE_ALL_CAP_ARR["$key"]="${value:=$key}"
+  done < "${TARGET_ENVELOPE_ALL_CAP}"
+
+  unset TARGET_UC_ONLINE_ARR
+  declare -g -A TARGET_UC_ONLINE_ARR
+  while IFS=: read -r key value; do
+      TARGET_UC_ONLINE_ARR["$key"]="${value:=$key}"
+  done < "${TARGET_UC_ONLINE_ALL}"
+
+  unset TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR
+  declare -g -A TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR
+  while IFS=: read -r key value; do
+      TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR["$key"]="${value:=$key}"
+  done < "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"
+
+  unset TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR
+  declare -g -A TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR
+  while IFS=: read -r key value; do
+      TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR["$key"]="${value:=$key}"
+  done < "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
+
+  unset TARGET_ENVELOPE_ALL_CAP_WITH_VERSION_ARR
+  declare -g -A TARGET_ENVELOPE_ALL_CAP_WITH_VERSION_ARR
+  while IFS=: read -r key value; do
+      TARGET_ENVELOPE_ALL_CAP_WITH_VERSION_ARR["$key"]=$value
+  done < "$TARGET_ENVELOPE_ALL_CAP_WITH_VERSION"
+
+  unset TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
+  declare -g -A TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
+  while IFS=: read -r key value; do
+      TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR["$key"]=$value
+  done < "$TARGET_UC_ONLINE_ALL_WITH_VERSION"
+
+  unset TARGET_UC_ONLINE_ALL_WITH_URL_ARR
+  declare -g -A TARGET_UC_ONLINE_ALL_WITH_URL_ARR
+  while IFS=| read -r key value; do
+      TARGET_UC_ONLINE_ALL_WITH_URL_ARR["$key"]=$value
+  done < "$TARGET_UC_ONLINE_ALL_WITH_URL"
+
 }
 
 staticCheckOfRequiredPlugins() {
@@ -400,9 +469,8 @@ cat << EOF
   Difference between current vs new plugins.yaml
     diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_SANITIZED#${CURRENT_DIR}/}"
 
-  Dependency tree of processed plugins (as single line or indented multiline):
+  Dependency tree of processed plugins:
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}"
-    cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE#${CURRENT_DIR}/}"
 
   List of all plugins to be expected on controller after startup:
     cat "${TARGET_PLUGIN_LIST_ALL_EXPECTED#${CURRENT_DIR}/}"
@@ -428,26 +496,26 @@ EOF
 }
 
 isCapPlugin() {
-  grep -qE "^$1$" "${TARGET_ENVELOPE_ALL_CAP}"
+  [[ -n "${TARGET_ENVELOPE_ALL_CAP_ARR[$1]-}" ]]
 }
 
 isListed() {
-  grep -qE "^$1$" "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT}"
+  [[ -n "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR[$1]-}" ]]
 }
 
 isBootstrapPlugin() {
-  grep -qE "^$1$" "${TARGET_ENVELOPE_BOOTSTRAP}"
+  [[ -n "${TARGET_ENVELOPE_BOOTSTRAP_ARR[$1]-}" ]]
 }
 
 isDeprecatedPlugin() {
-  grep -qE "^$1$" "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
+  [[ -n "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR[$1]-}" ]]
 }
 
 isNotAffectedByCVE() {
   if [ $CHECK_CVES -eq 1 ]; then
     # if no CVEs at all for plugin, return 0
     if ! grep -qE "^${1}$" "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"; then
-      return
+      return 0
     fi
     # create plugin specific warning json
     local pWarnings="${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.${1}.json"
@@ -457,7 +525,7 @@ isNotAffectedByCVE() {
     fi
     # go through each security warning
     local pluginVersion=''
-    pluginVersion=$(grep "^$1:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d':' -f 2)
+    pluginVersion="${TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR[$1]}"
     for w in $(jq -r '.id' "${pWarnings}"); do
       debug "Plugin '$1' - checking security issue '$w'"
       local isAffected=
@@ -482,37 +550,87 @@ isDependency() {
   # - non bootstrap
   # - found as a dependency of another listed plugin
   isBootstrapPlugin "$1" && return 1 \
-    || grep -qE "^$1$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+    || grep -qE ".* -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" && return 0 || return 1
+}
+
+addToDeps() {
+  local newEntry=$1
+  local newKey="${1// */}"
+  local curEntry="${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR[$newKey]-}"
+  if [[ -n "$curEntry" ]]; then
+    debug "Appending $newKey -> $newEntry"
+    TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR["$newKey"]=$(printf "${curEntry}\n${newEntry}")
+  else
+    debug "First time $newKey -> $newEntry"
+    TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR["$newKey"]="$newEntry"
+  fi
 }
 
 processDepTree() {
-  local pList=$1
-  local indent="${2:-}"
+  local p=$1
+  local directPrefix="${2:-}"
   local parentPrefix="${3:-}"
-  local p=
-  for p in $pList; do
-    debug "${indent}$p"
-    echo "${indent}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_INDENTED_MULTILINE}"
-    depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
-    if [ -n "$depList" ]; then
-      if ! isBootstrapPlugin "$p"; then
-        processDepTree "${depList}" "${indent}${INDENT_SPACING}"  "${parentPrefix}$p -> "
-      else
-        echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
-      fi
+  local depList=
+  depList=$(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES | xargs)
+  if [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]-}" ]]; then
+    debug "Already processed plugin '$p' ($directPrefix) ($parentPrefix) ($depList)"
+    return 0
+  fi
+  debug "Processing plugin '$p' ($directPrefix) ($parentPrefix) ($depList)"
+  if [ -n "$depList" ]; then
+    if ! isBootstrapPlugin "$p"; then
+      local dep=
+      for dep in $depList; do
+        if [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$dep]-}" ]]; then
+          debug "Reusing dep '$dep' ($p)"
+          while IFS= read -r line; do
+            addToDeps "${parentPrefix}$p -> $line"
+          done <<< "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$dep]}"
+        else
+          debug "Processing dep '$dep' ($p)"
+          processDepTree "${dep}" "$p -> " "${parentPrefix}$p -> "
+          debug "Processed dep '$dep' ($p)"
+        fi
+      done
     else
-      echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
+      # echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
+      addToDeps "${parentPrefix}$p"
+      if [ -n "${directPrefix}" ] && [[ "${parentPrefix}" != "${directPrefix}" ]]; then
+        addToDeps "${directPrefix}$p"
+      fi
     fi
-  done
+  else
+    # echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
+    addToDeps "${parentPrefix}$p"
+    if [ -n "${directPrefix}" ] && [[ "${parentPrefix}" != "${directPrefix}" ]]; then
+      addToDeps "${directPrefix}$p"
+    fi
+  fi
+
+  if [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR[$p]-}" ]]; then
+    info "Finished processing '$p'"
+    debug "Dependency tree for '$p' --->
+${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR[$p]}"
+    TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED["$p"]="${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR[$p]}"
+  fi
+}
+
+isProcessedDep() {
+  [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_ARR[$1]-}" ]]
+}
+
+isProcessedDepNonTopLevel() {
+  [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$1]-}" ]]
 }
 
 processDeps() {
   local p=$1
   local indent="${2:-}"
-  if ! grep -qE "^$p$" "${TARGET_PLUGIN_DEPS_PROCESSED}"; then
+  if ! isProcessedDep "$p"; then
     debug "${indent}Plugin: $p"
     # processed
     echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
+    TARGET_PLUGIN_DEPS_PROCESSED_ARR[$p]="$p"
     # bootstrap plugins
     if isBootstrapPlugin "$p"; then
       if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
@@ -531,8 +649,9 @@ processDeps() {
       fi
       for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
         # record ALL non-top-level plugins as dependencies for the categorisation afterwards
-        if ! grep -qE "^$dep$" "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"; then
+        if ! isProcessedDepNonTopLevel "$dep"; then
           echo $dep >> "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+          TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$dep]="$dep"
         fi
         if isCapPlugin "$p"; then
           debug "${indent}  Dependency: $dep (parent in CAP so no further processing)"
@@ -550,6 +669,11 @@ processDeps() {
 processAllDeps() {
   info "Calculating dependencies..."
   # empty the processed lists
+  unset TARGET_PLUGIN_DEPS_PROCESSED_ARR
+  declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_ARR
+  unset TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR
+  declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR
+
   echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED}"
   echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
   echo "plugins:" > "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
@@ -564,7 +688,14 @@ processAllDeps() {
   done
   sort -o "${TARGET_PLUGIN_DEPS_PROCESSED}" "${TARGET_PLUGIN_DEPS_PROCESSED}"
   info "Processing dependency tree..."
-  processDepTree "$(yq '.plugins[].id' ${TARGET_PLUGIN_DEPENDENCY_RESULTS})"
+  unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
+  declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
+  unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED
+  declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED
+  for p in $(yq '.plugins[].id' ${TARGET_PLUGIN_DEPENDENCY_RESULTS}); do
+    processDepTree "$p"
+    echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]}" >> "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
+  done
 }
 
 createPluginCatalogAndPluginsYaml() {
@@ -582,7 +713,7 @@ createPluginCatalogAndPluginsYaml() {
   yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   for pluginName in $NON_CAP_PLUGINS; do
     info "Adding plugin '$pluginName'"
-    pluginVersion=$(grep "^$pluginName:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d: -f2)
+    pluginVersion="${TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR[$pluginName]}"
     k="$pluginName" v="$pluginVersion" yq -i '.configurations[].includePlugins += { env(k): { "version": env(v) }} | style="double" ..' "${targetFile}"
   done
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
@@ -591,7 +722,7 @@ createPluginCatalogAndPluginsYaml() {
   yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   for pluginName in $NON_CAP_PLUGINS; do
     info "Adding OFFLINE plugin '$pluginName'"
-    pluginVersion=$(grep "^$pluginName:.*$" "${TARGET_UC_ONLINE_ALL_WITH_VERSION}" | cut -d: -f2)
+    pluginVersion="${TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR[$pluginName]}"
     # pluginUrl defaults to the official online url
     local pluginUrlOfficial=$(grep "^$pluginName|.*$" "${TARGET_UC_ONLINE_ALL_WITH_URL}" | cut -d'|' -f2)
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
@@ -733,6 +864,7 @@ createPluginCatalogAndPluginsYaml() {
 
   # final target stuff
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
+  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL"
   [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || cp -v "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
   [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || cp -v "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
 
@@ -764,30 +896,38 @@ reducePluginList() {
     debug "====================================="
     debug "$reducedPluginList"
     debug "====================================="
-    pluginLineToCheck=$(head -n 1 <<< "$depsSortedByDepth")
-    # go through the list of parents. if parent found in main list, remove any of its children
-    for parentToCheck in $(echo "$pluginLineToCheck" | sed -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
-      if grep -qE "^($parentToCheck)$" "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS}"; then
-        debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
-        continue
-      elif grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
-        debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
-        if grep -qE "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"; then
-          childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
-            | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
+    while IFS= read -r pluginLineToCheck; do
+      # go through the list of parents. if parent found in main list, remove any of its children
+      for parentToCheck in $(echo "$pluginLineToCheck" | sed -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
+        if [[ -n "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR[$parentToCheck]-}" ]]; then
+          debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
+          continue
+        elif grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
+          debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
+          childrenToRemove=$(echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$parentToCheck]-}" \
+            | sed -e "s/^$parentToCheck -> //" -e 's/ -> /\n/g' \
             | sort -u | xargs)
+          # if grep -qE "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"; then
+          #   childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
+          #     | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
+          #     | sort -u | xargs)
+          # fi
+          for childToRemove in $childrenToRemove; do
+            if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
+              if isCapPlugin "$childToRemove"; then
+                info "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
+                tmpReducedPluginList=$(grep -vE "^$childToRemove$" <<< "$reducedPluginList")
+                reducedPluginList=$tmpReducedPluginList
+                reducedList=1
+              else
+                info "Keeping child '$childToRemove' in main list due to being 3rd party (from $parentToCheck)..."
+              fi
+            fi
+          done
+          break
         fi
-        for childToRemove in $childrenToRemove; do
-          if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
-            debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
-            tmpReducedPluginList=$(grep -vE "^$childToRemove$" <<< "$reducedPluginList")
-            reducedPluginList=$tmpReducedPluginList
-            reducedList=1
-          fi
-        done
-        break
-      fi
-    done
+      done
+    done <<< "$depsSortedByDepth"
   done
 }
 
@@ -829,8 +969,8 @@ checkCIVersions() {
     info "ATTENTION: Comma or space separated CI_VERSION's detected. The COMPLETE plugin-catalog files will be placed in the last version in the list."
     TMP_PLUGIN_CATALOG="${TARGET_BASE_DIR}/plugin-catalog.yaml"
     TMP_PLUGIN_CATALOG_OFFLINE="${TARGET_BASE_DIR}/plugin-catalog-offline.yaml"
-    echo > "$TMP_PLUGIN_CATALOG"
-    echo > "$TMP_PLUGIN_CATALOG_OFFLINE"
+    echo -n > "$TMP_PLUGIN_CATALOG"
+    echo -n > "$TMP_PLUGIN_CATALOG_OFFLINE"
   fi
 }
 
