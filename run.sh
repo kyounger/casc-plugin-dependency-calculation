@@ -42,16 +42,17 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -c FILE     Final target of the resulting plugin-catalog.yaml
     -C FILE     Final target of the resulting plugin-catalog-offline.yaml
 
-    -d          Download plugins and create a plugin-catalog-offline.yaml with URLs
+    -d          Download plugins to use later (e.g. PFILE in exec hooks)
     -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
                     This make use of the PNAME and PVERSION markers
-                    e.g. 'http://plugin-catalog/plugins/PNAME/PVERSION/PNAME.hpi'
+                    e.g. -D 'http://plugin-catalog/plugins/PNAME/PVERSION/PNAME.hpi'
                     If not set, the URL defaults to the official url of the plugin
     -e FILE     Exec-hook - script to call when processing 3rd party plugins
                     script will have access env vars:
                     PNAME - the name of the plugin
                     PVERSION - the version of the plugin
                     PURL - the url as specified above
+                    PURL_OFFICIAL - the official default url given in the update center
                     PFILE - the path to the downloaded plugin (NOTE: empty if '-d' not used)
                     can be used to automate the uploading of plugins to a repository manager
                     see examples under examples/exec-hooks
@@ -272,7 +273,6 @@ createTargetDirs() {
   TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/plugins.yaml"
   TARGET_PLUGINS_YAML_MINIMAL="${TARGET_DIR}/plugins-minimal.yaml"
-  TARGET_PLUGINS_DIR="${TARGET_GEN}/plugins"
   # original files
   TARGET_PLUGINS_YAML_ORIG="${TARGET_PLUGINS_YAML}.orig.yaml"
   TARGET_PLUGIN_CATALOG_ORIG="${TARGET_PLUGIN_CATALOG}.orig.yaml"
@@ -725,18 +725,21 @@ createPluginCatalogAndPluginsYaml() {
     # if the plugins were downloaded, copy and create an offline plugin catalog
     pluginDest=
     if [ $DOWNLOAD -eq 1 ]; then
-      pluginUrl="$(find "${TARGET_PLUGINS_DIR}" -type f -name "${pluginName}.*pi")"
-      pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/$(basename "${pluginSrc}")"
+      pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginUrlOfficial//*\//}"
       # Copy to cache...
       mkdir -p $(dirname "${pluginDest}")
-      info "Downloading plugin from ${pluginUrlOfficial} -> ${pluginDest}"
-      curl -sL "${pluginUrlOfficial}" -o "${pluginDest}"
+      if [ ! -f "$pluginDest" ]; then
+        info "Downloading plugin from ${pluginUrlOfficial} -> ${pluginDest}"
+        curl -sL "${pluginUrlOfficial}" -o "${pluginDest}"
+      else
+        info "Downloading (already exists) plugin from ${pluginUrlOfficial} -> ${pluginDest}"
+      fi
     fi
 
     # Call exec hook if available...
     if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ]; then
       info "Calling exec-hook ${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}..."
-      PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="${pluginDest:-}" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
+      PNAME="$pluginName" PVERSION="$pluginVersion" PFILE="${pluginDest:-}" PURL_OFFICIAL="$pluginUrlOfficial" PURL="$pluginUrl" "$PLUGIN_CATALOG_OFFLINE_EXEC_HOOK"
     fi
     k="$pluginName" u="$pluginUrl" yq -i '.configurations[].includePlugins += { env(k): { "url": env(u) }} | style="double" ..' "${targetFile}"
   done
@@ -790,7 +793,9 @@ createPluginCatalogAndPluginsYaml() {
       isDependency "$p" && pStr="${pStr} dep"
       isDeprecatedPlugin "$p" && pStr="${pStr} old"
       isNotAffectedByCVE "$p" || pStr="${pStr} cve"
-      if [[ "$pStr" =~ cap.*dep ]] && isCandidateForRemoval "$p"; then
+      if [[ "$pStr" =~ cap\ lst.*dep ]] && isCandidateForRemoval "$p"; then
+        considerForPotentialRemoval="$considerForPotentialRemoval $p "
+      elif [[ "$pStr" =~ bst ]]; then
         considerForPotentialRemoval="$considerForPotentialRemoval $p "
       fi
       case "${PLUGIN_YAML_COMMENTS_STYLE}" in
@@ -811,11 +816,15 @@ createPluginCatalogAndPluginsYaml() {
       info "=============================================================="
       info "!!! Candidates for potential removal from the plugins.yaml !!!"
       info "=============================================================="
-      info "The following plugins are dependencies of CAP plugins: $considerForPotentialRemoval"
+      info "The following plugins are either bootstrap or dependencies of CAP plugins: $considerForPotentialRemoval"
       info "For more details run: p=<PLUGIN_TO_CHECK>; grep -E \".* -> \$p($| )\" \"${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}\""
       for pToCheck in $considerForPotentialRemoval; do
-        parentList=$(grep -E ".* -> $pToCheck($| )" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" | cut -d' ' -f 1 | sort -u | xargs)
-        info "  ${pToCheck} provided by: $parentList"
+        if isBootstrapPlugin "$pToCheck"; then
+          info "  ${pToCheck}: is a bootstrap plugin"
+        else
+          parentList=$(grep -E ".* -> $pToCheck($| )" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" | cut -d' ' -f 1 | sort -u | xargs)
+          info "  ${pToCheck}: provided by $parentList"
+        fi
       done
     fi
   fi
