@@ -10,7 +10,7 @@ configurations:
       ansicolor:
         version: "1.0.2"
       artifactory:
-        version: "3.18.5"
+        version: "3.18.8"
       aws-java-sdk:
         version: "1.12.406-374.v4cdf53953691"
       aws-java-sdk-cloudformation:
@@ -48,7 +48,7 @@ configurations:
       ec2-fleet:
         version: "2.7.1"
       envinject:
-        version: "2.901.v0038b_6471582"
+        version: "2.908.v66a_774b_31d93"
       envinject-api:
         version: "1.199.v3ce31253ed13"
       gerrit-trigger:
@@ -82,6 +82,6 @@ configurations:
       throttle-concurrents:
         version: "2.13"
       uno-choice:
-        version: "2.6.5"
+        version: "2.7"
       ws-cleanup:
         version: "0.45"

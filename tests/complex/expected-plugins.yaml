@@ -71,7 +71,7 @@ plugins:
   - id: junit # cap lst dep
   - id: mailer # cap lst bst
   - id: matrix-project # cap lst dep
-  - id: maven-plugin # cap lst
+  - id: maven-plugin # cap lst dep
   - id: parameterized-scheduler # 3rd lst
   - id: parameterized-trigger # 3rd lst
   - id: pipeline-maven # 3rd lst
