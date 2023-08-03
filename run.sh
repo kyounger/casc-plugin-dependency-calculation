@@ -637,7 +637,6 @@ processDeps() {
     debug "${indent}Plugin: $p"
     # add parent
     if [ -n "${parent}" ]; then
-      echo "Setting parent $parent for plugin $p"
       TARGET_PLUGIN_DEPS_PARENTS_ARR["$p"]="${TARGET_PLUGIN_DEPS_PARENTS_ARR[$p]:-} $parent"
     fi
     # processed
@@ -663,12 +662,8 @@ processDeps() {
         if ! isProcessedDepNonTopLevel "$dep"; then
           TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$dep]="$dep"
         fi
-        if isCapPlugin "$p"; then
-          debug "${indent}  Dependency: $dep (parent in CAP so no further processing)"
-        else
-          debug "${indent}  Dependency: $dep"
-          processDeps "${dep}" "$p" "${indent}  "
-        fi
+        debug "${indent}  Dependency: $dep"
+        processDeps "${dep}" "$p" "${indent}  "
       done
     fi
   else
@@ -701,16 +696,18 @@ processAllDeps() {
   # sort processed into files for later
   printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED}"
   printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
 
   info "Processing dependency tree..."
   unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
   unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED
-  for p in $(yq '.plugins[].id' ${TARGET_PLUGIN_DEPENDENCY_RESULTS}); do
+  for p in $(yq '.plugins[].id' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"); do
     processDepTree "$p"
     echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]}" >> "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
   done
+  sort -o "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
 }
 
 createPluginCatalogAndPluginsYaml() {
@@ -886,6 +883,10 @@ createPluginCatalogAndPluginsYaml() {
         k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL}"
       fi
     done
+    # copy again and sanitize (better for comparing later)
+    cp "${TARGET_PLUGINS_YAML_MINIMAL}" "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED}"
+    yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED}"
+
     info "Removing ALL dependency plugins from minimal list to create starter pack..."
     cp "${TARGET_PLUGINS_YAML_MINIMAL}" "$TARGET_PLUGINS_YAML_MINIMAL_GEN"
     for k in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_MINIMAL_GEN"); do
@@ -894,12 +895,10 @@ createPluginCatalogAndPluginsYaml() {
         k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL_GEN}"
       fi
     done
+    # copy again and sanitize (better for comparing later)
+    cp "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED}"
+    yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED}"
   fi
-  # copy again and sanitize (better for comparing later)
-  cp "${TARGET_PLUGINS_YAML_MINIMAL}" "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED}"
-  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED}"
-  cp "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED}"
-  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED}"
 
   # final target stuff
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
