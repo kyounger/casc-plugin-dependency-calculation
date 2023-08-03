@@ -185,6 +185,7 @@ cacheUpdateCenter() {
 }
 
 prereqs() {
+  [[ "${BASH_VERSION}" =~ ^3.* ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
   for tool in yq jq curl awk; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
@@ -273,6 +274,7 @@ createTargetDirs() {
   TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/plugins.yaml"
   TARGET_PLUGINS_YAML_MINIMAL="${TARGET_DIR}/plugins-minimal.yaml"
+  TARGET_PLUGINS_YAML_MINIMAL_GEN="${TARGET_DIR}/plugins-minimal-for-generation-only.yaml"
   # original files
   TARGET_PLUGINS_YAML_ORIG="${TARGET_PLUGINS_YAML}.orig.yaml"
   TARGET_PLUGIN_CATALOG_ORIG="${TARGET_PLUGIN_CATALOG}.orig.yaml"
@@ -280,6 +282,8 @@ createTargetDirs() {
   TARGET_PLUGINS_YAML_SANITIZED="${TARGET_PLUGINS_YAML}.sanitized.yaml"
   TARGET_PLUGINS_YAML_ORIG_SANITIZED="${TARGET_PLUGINS_YAML}.orig.sanitized.yaml"
   TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT="${TARGET_PLUGINS_YAML_ORIG_SANITIZED}.txt"
+  TARGET_PLUGINS_YAML_MINIMAL_SANITIZED="${TARGET_PLUGINS_YAML_MINIMAL}.sanitized.yaml"
+  TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED="${TARGET_PLUGINS_YAML_MINIMAL_GEN}.sanitized.yaml"
   TARGET_PLUGIN_CATALOG_ORIG_SANITIZED="${TARGET_PLUGIN_CATALOG}.orig.sanitized.yaml"
 
   info "Creating target dir (${TARGET_DIR})"
@@ -465,9 +469,20 @@ EOF
 
   if [ -f "$TARGET_PLUGINS_YAML_MINIMAL" ]; then
 cat << EOF
-  Minimal plugins.yaml (if existed)
+  Minimal viable plugins.yaml
     yq "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
+
+    Difference: provided list vs minimal viable list:
     diff -y "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
+
+  Minimal non-viable plugins.yaml (to be used a static starter list)
+    yq "${TARGET_PLUGINS_YAML_MINIMAL_GEN#${CURRENT_DIR}/}"
+
+    Difference: original list vs starter list:
+    diff -y "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#${CURRENT_DIR}/}"
+
+    Difference: minimal viable list vs starter list:
+    diff -y "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#${CURRENT_DIR}/}"
 
 EOF
   fi
@@ -533,8 +548,8 @@ isDependency() {
 
 isCandidateForRemoval() {
   # assumption: all direct parents are CAP plugins
-  local possibleParents=
-  possibleParents=$(grep -oE "([a-zA-Z0-9\-]*) -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}")
+  local possibleParents="${TARGET_PLUGIN_DEPS_PARENTS_ARR[$1]-}"
+  # possibleParents=$(grep -oE "([a-zA-Z0-9\-]*) -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}")
   for pp in $(echo "$possibleParents" | sed 's/ -> / /g' | cut -d ' ' -f 1 | sort -u); do
     if ! isCapPlugin "$pp"; then
       return 1
@@ -616,11 +631,16 @@ isProcessedDepNonTopLevel() {
 
 processDeps() {
   local p=$1
-  local indent="${2:-}"
+  local parent="${2:-}"
+  local indent="${3:-}"
   if ! isProcessedDep "$p"; then
     debug "${indent}Plugin: $p"
+    # add parent
+    if [ -n "${parent}" ]; then
+      echo "Setting parent $parent for plugin $p"
+      TARGET_PLUGIN_DEPS_PARENTS_ARR["$p"]="${TARGET_PLUGIN_DEPS_PARENTS_ARR[$p]:-} $parent"
+    fi
     # processed
-    echo $p >> "${TARGET_PLUGIN_DEPS_PROCESSED}"
     TARGET_PLUGIN_DEPS_PROCESSED_ARR[$p]="$p"
     # bootstrap plugins
     if isBootstrapPlugin "$p"; then
@@ -641,14 +661,13 @@ processDeps() {
       for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
         # record ALL non-top-level plugins as dependencies for the categorisation afterwards
         if ! isProcessedDepNonTopLevel "$dep"; then
-          echo $dep >> "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
           TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$dep]="$dep"
         fi
         if isCapPlugin "$p"; then
           debug "${indent}  Dependency: $dep (parent in CAP so no further processing)"
         else
           debug "${indent}  Dependency: $dep"
-          processDeps "${dep}" "${indent}  "
+          processDeps "${dep}" "$p" "${indent}  "
         fi
       done
     fi
@@ -664,6 +683,8 @@ processAllDeps() {
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_ARR
   unset TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR
+  unset TARGET_PLUGIN_DEPS_PARENTS_ARR
+  declare -g -A TARGET_PLUGIN_DEPS_PARENTS_ARR
 
   echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED}"
   echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
@@ -677,7 +698,10 @@ processAllDeps() {
   for p in $LIST_OF_PLUGINS; do
       processDeps $p
   done
-  sort -o "${TARGET_PLUGIN_DEPS_PROCESSED}" "${TARGET_PLUGIN_DEPS_PROCESSED}"
+  # sort processed into files for later
+  printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED}"
+  printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+
   info "Processing dependency tree..."
   unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
@@ -784,13 +808,14 @@ createPluginCatalogAndPluginsYaml() {
 
     # Plugin comments...
     considerForPotentialRemoval=""
+    declare -A ALL_DEPS_ARR
     for p in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML"); do
       info "Adding comments for plugin '$p'"
       export pStr=""
       isCapPlugin "$p" && pStr="${pStr} cap" || pStr="${pStr} 3rd"
       isListed "$p" && pStr="${pStr} lst"
       isBootstrapPlugin "$p" && pStr="${pStr} bst"
-      isDependency "$p" && pStr="${pStr} dep"
+      isDependency "$p" && { pStr="${pStr} dep"; ALL_DEPS_ARR["$p"]="$p"; }
       isDeprecatedPlugin "$p" && pStr="${pStr} old"
       isNotAffectedByCVE "$p" || pStr="${pStr} cve"
       if [[ "$pStr" =~ cap\ lst.*dep ]] && isCandidateForRemoval "$p"; then
@@ -852,6 +877,7 @@ createPluginCatalogAndPluginsYaml() {
     reducedPluginList=$(yq '.plugins[].id' "$TARGET_PLUGINS_YAML")
     removeAllBootstrap
     reducedList=1
+    info "Removing dependency plugins from main list..."
     reducePluginList
     cp "${TARGET_PLUGINS_YAML}" "$TARGET_PLUGINS_YAML_MINIMAL"
     for k in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_MINIMAL"); do
@@ -860,7 +886,20 @@ createPluginCatalogAndPluginsYaml() {
         k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL}"
       fi
     done
+    info "Removing ALL dependency plugins from minimal list to create starter pack..."
+    cp "${TARGET_PLUGINS_YAML_MINIMAL}" "$TARGET_PLUGINS_YAML_MINIMAL_GEN"
+    for k in $(yq '.plugins[].id' "$TARGET_PLUGINS_YAML_MINIMAL_GEN"); do
+      if [[ -n "${ALL_DEPS_ARR[$k]-}" ]]; then
+        debug "Removing '$k' from the TARGET_PLUGINS_YAML_MINIMAL_GEN"
+        k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL_GEN}"
+      fi
+    done
   fi
+  # copy again and sanitize (better for comparing later)
+  cp "${TARGET_PLUGINS_YAML_MINIMAL}" "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED}"
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED}"
+  cp "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED}"
+  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED}"
 
   # final target stuff
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
@@ -881,7 +920,7 @@ sortDepsByDepth() {
 }
 
 reducePluginList() {
-  info "Removing dependency plugins from main list..."
+  local includeThirdPartyOnReduce="${1:-false}"
   while [ -n "${reducedList:-}" ]; do
     info "Removing dependency plugins - iterating..."
     reducedList=
@@ -900,21 +939,19 @@ reducePluginList() {
       # go through the list of parents. if parent found in main list, remove any of its children
       for parentToCheck in $(echo "$pluginLineToCheck" | sed -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
         if [[ -n "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR[$parentToCheck]-}" ]]; then
-          debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
-          continue
-        elif grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
+          if [[ "$includeThirdPartyOnReduce" != "true" ]]; then
+            debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
+            continue
+          fi
+        fi
+        if grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
           debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
           childrenToRemove=$(echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$parentToCheck]-}" \
             | sed -e "s/^$parentToCheck -> //" -e 's/ -> /\n/g' \
             | sort -u | xargs)
-          # if grep -qE "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"; then
-          #   childrenToRemove=$(grep -E "(^| )$parentToCheck($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" \
-          #     | sed -e "s/^$parentToCheck -> //" -e "s/^.* $parentToCheck -> //" -e 's/ -> /\n/g' \
-          #     | sort -u | xargs)
-          # fi
           for childToRemove in $childrenToRemove; do
             if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
-              if isCapPlugin "$childToRemove"; then
+              if isCapPlugin "$childToRemove" || [[ "$includeThirdPartyOnReduce" == "true" ]]; then
                 info "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
                 tmpReducedPluginList=$(grep -vE "^$childToRemove$" <<< "$reducedPluginList")
                 reducedPluginList=$tmpReducedPluginList
