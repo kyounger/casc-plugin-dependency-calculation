@@ -185,7 +185,7 @@ cacheUpdateCenter() {
 }
 
 prereqs() {
-  [[ "${BASH_VERSION}" =~ ^3.* ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
+  [[ "${BASH_VERSION:0:1}" -lt 4 ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
   for tool in yq jq curl awk; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
@@ -543,19 +543,13 @@ isDependency() {
   # - non bootstrap
   # - found as a dependency of another listed plugin
   isBootstrapPlugin "$1" && return 1 \
-    || grep -qE ".* -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" && return 0 || return 1
+    || [[ -n "${TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR[$1]-}" ]] \
+    || [[ -n "${TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR[$1]-}" ]]
 }
 
 isCandidateForRemoval() {
-  # assumption: all direct parents are CAP plugins
-  local possibleParents="${TARGET_PLUGIN_DEPS_PARENTS_ARR[$1]-}"
-  # possibleParents=$(grep -oE "([a-zA-Z0-9\-]*) -> $1($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}")
-  for pp in $(echo "$possibleParents" | sed 's/ -> / /g' | cut -d ' ' -f 1 | sort -u); do
-    if ! isCapPlugin "$pp"; then
-      return 1
-    fi
-  done
-  return 0
+  # assumption: CAP and all direct parents are CAP plugins
+  isCapPlugin "$1" && [[ -z "${TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR[$1]-}" ]]
 }
 
 
@@ -599,14 +593,12 @@ processDepTree() {
         fi
       done
     else
-      # echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
       addToDeps "${parentPrefix}$p"
       if [ -n "${directPrefix}" ] && [[ "${parentPrefix}" != "${directPrefix}" ]]; then
         addToDeps "${directPrefix}$p"
       fi
     fi
   else
-    # echo "${parentPrefix}$p" >> "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}"
     addToDeps "${parentPrefix}$p"
     if [ -n "${directPrefix}" ] && [[ "${parentPrefix}" != "${directPrefix}" ]]; then
       addToDeps "${directPrefix}$p"
@@ -629,33 +621,48 @@ isProcessedDepNonTopLevel() {
   [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$1]-}" ]]
 }
 
+isAddedToResults() {
+  [[ -n "${TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR[$1]-}" ]]
+}
 processDeps() {
   local p=$1
   local parent="${2:-}"
   local indent="${3:-}"
-  if ! isProcessedDep "$p"; then
-    debug "${indent}Plugin: $p"
-    # add parent
-    if [ -n "${parent}" ]; then
-      TARGET_PLUGIN_DEPS_PARENTS_ARR["$p"]="${TARGET_PLUGIN_DEPS_PARENTS_ARR[$p]:-} $parent"
+  # add parent regardless...
+  if [ -n "${parent}" ]; then
+    if isCapPlugin "$parent"; then
+      TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR["$p"]="${TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR[$p]:-} $parent"
+    else
+      TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR["$p"]="${TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR[$p]:-} $parent"
     fi
-    # processed
-    TARGET_PLUGIN_DEPS_PROCESSED_ARR[$p]="$p"
+    isProcessedDep "$parent" && return
+  fi
+  if ! isAddedToResults "$p"; then
+    debug "${indent}Plugin: $p"
     # bootstrap plugins
     if isBootstrapPlugin "$p"; then
       if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
         debug "${indent}Result - add bootstrap: $p"
-        echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+        TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
       else
         debug "${indent}Result - ignore: $p (already in bootstrap)"
       fi
     else
       if isCapPlugin "$p"; then
-        debug "${indent}Result - add non-bootstrap CAP plugin: $p"
-        echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+        if [ -n "${TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR["$p"]-}" ]; then
+          debug "${indent}Result - add non-bootstrap CAP plugin (3rd party parent): $p"
+          TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
+        else
+          if [ -n "${TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR["$p"]-}" ]; then
+            debug "${indent}Result - ignore since parent is already a CAP plugin: $p"
+          else
+            debug "${indent}Result - add non-bootstrap CAP plugin: $p"
+            TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
+          fi
+        fi
       else
         debug "${indent}Result - add third-party plugin: $p"
-        echo "  - id: $p" >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+        TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
       fi
       for dep in $(awk -v pat="^${p}:.*" -F':' '$0 ~ pat { print $2 }' $DEPS_FILES); do
         # record ALL non-top-level plugins as dependencies for the categorisation afterwards
@@ -666,6 +673,8 @@ processDeps() {
         processDeps "${dep}" "$p" "${indent}  "
       done
     fi
+    # processed
+    TARGET_PLUGIN_DEPS_PROCESSED_ARR[$p]="$p"
   else
     debug "${indent}Plugin: $p (already processed)"
   fi
@@ -678,12 +687,12 @@ processAllDeps() {
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_ARR
   unset TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR
-  unset TARGET_PLUGIN_DEPS_PARENTS_ARR
-  declare -g -A TARGET_PLUGIN_DEPS_PARENTS_ARR
-
-  echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED}"
-  echo -n > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
-  echo "plugins:" > "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  unset TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR
+  declare -g -A TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR
+  unset TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR
+  declare -g -A TARGET_PLUGIN_DEPS_NON_CAP_PARENTS_ARR
+  unset TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR
+  declare -g -A TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR
 
   # optional deps?
   [ $INCLUDE_OPTIONAL -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
@@ -696,16 +705,20 @@ processAllDeps() {
   # sort processed into files for later
   printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED}"
   printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
-  yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  echo "plugins:" > "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  printf "  - id: %s\n" "${!TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR[@]}" | sort >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  # yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
 
   info "Processing dependency tree..."
   unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
   unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED
   declare -g -A TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED
-  for p in $(yq '.plugins[].id' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"); do
-    processDepTree "$p"
-    echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]}" >> "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
+  for p in "${TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}"; do
+    if ! isBootstrapPlugin "$p"; then
+      processDepTree "$p"
+      echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]}" >> "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
+    fi
   done
   sort -o "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
 }
@@ -919,7 +932,6 @@ sortDepsByDepth() {
 }
 
 reducePluginList() {
-  local includeThirdPartyOnReduce="${1:-false}"
   while [ -n "${reducedList:-}" ]; do
     info "Removing dependency plugins - iterating..."
     reducedList=
@@ -938,25 +950,18 @@ reducePluginList() {
       # go through the list of parents. if parent found in main list, remove any of its children
       for parentToCheck in $(echo "$pluginLineToCheck" | sed -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
         if [[ -n "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR[$parentToCheck]-}" ]]; then
-          if [[ "$includeThirdPartyOnReduce" != "true" ]]; then
-            debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
-            continue
-          fi
+          debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
+          continue
         fi
         if grep -qE "^($parentToCheck)$" <<< "$reducedPluginList"; then
           debug "Found parent '$parentToCheck' in main list. Removing any of it's children..."
-          childrenToRemove=$(echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$parentToCheck]-}" \
-            | sed -e "s/^$parentToCheck -> //" -e 's/ -> /\n/g' \
-            | sort -u | xargs)
-          for childToRemove in $childrenToRemove; do
+          for childToRemove in $(getChildren "$parentToCheck"); do
             if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
-              if isCapPlugin "$childToRemove" || [[ "$includeThirdPartyOnReduce" == "true" ]]; then
-                info "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
-                tmpReducedPluginList=$(grep -vE "^$childToRemove$" <<< "$reducedPluginList")
-                reducedPluginList=$tmpReducedPluginList
-                reducedList=1
+              if isCandidateForRemoval "$childToRemove"; then
+                debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
+                removeFromReduceList "$childToRemove"
               else
-                info "Keeping child '$childToRemove' in main list due to being 3rd party (from $parentToCheck)..."
+                debug "Keeping child '$childToRemove' in main list due to having 3rd party parents somewhere..."
               fi
             fi
           done
@@ -965,6 +970,40 @@ reducePluginList() {
       done
     done <<< "$depsSortedByDepth"
   done
+  # final cleanup
+  info "Removing dependency plugins final cleanup..."
+  reducedList=1
+  local p=
+  while [ -n "${reducedList:-}" ]; do
+    reducedList=
+    for p in $reducedPluginList; do
+      if ! isCapPlugin "$p"; then
+        debug "Removing dependency plugins final cleanup - looking at $p..."
+        for childToRemove in $(getChildren "$p"); do
+          local possibleParents="${TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR[$childToRemove]-}"
+          for capParent in $possibleParents; do
+            if grep -qE "^($childToRemove)$" <<< "$reducedPluginList" && grep -qE "^($capParent)$" <<< "$reducedPluginList"; then
+                info "Removing child '$childToRemove' from main list due to CAP parent $capParent existing..."
+                removeFromReduceList "$childToRemove"
+                continue
+            fi
+          done
+        done
+      fi
+    done
+  done
+}
+
+removeFromReduceList() {
+    local tmpReducedPluginList=$(grep -vE "^$1$" <<< "$reducedPluginList")
+    reducedPluginList=$tmpReducedPluginList
+    reducedList=1
+}
+
+getChildren() {
+  echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$1]-}" \
+    | sed -e "s/^$1 -> //" -e 's/ -> /\n/g' \
+    | sort -u | xargs
 }
 
 removeAllBootstrap() {

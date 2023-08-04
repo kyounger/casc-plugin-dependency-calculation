@@ -28,7 +28,6 @@ plugins:
   - id: aws-java-sdk-ssm # 3rd lst dep
   - id: badge # 3rd lst
   - id: blueocean # cap lst
-  - id: bootstrap5-api # cap dep
   - id: build-failure-analyzer # 3rd lst
   - id: build-monitor-plugin # 3rd lst
   - id: checks-api # cap dep
@@ -40,13 +39,10 @@ plugins:
   - id: config-file-provider # cap lst dep
   - id: configuration-as-code # cap lst dep
   - id: configuration-as-code-groovy # 3rd lst
-  - id: data-tables-api # cap lst dep
   - id: ec2-fleet # 3rd lst
-  - id: echarts-api # cap dep
   - id: email-ext # cap lst
   - id: envinject # 3rd lst
   - id: envinject-api # 3rd lst dep
-  - id: font-awesome-api # cap dep
   - id: forensics-api # cap lst dep
   - id: gerrit-trigger # 3rd lst
   - id: gradle # cap lst dep
@@ -61,7 +57,6 @@ plugins:
   - id: pipeline-maven # 3rd lst
   - id: pipeline-stage-view # cap lst
   - id: pipeline-utility-steps # 3rd lst cve
-  - id: plugin-util-api # cap dep
   - id: prism-api # cap lst dep
   - id: prometheus # 3rd lst
   - id: resource-disposer # 3rd lst dep

@@ -52,14 +52,14 @@ for testName in $TESTS; do
     [ -f "${actualPluginCatalogOffline}" ] || die "Resulting file '$actualPluginCatalogOffline' doesn't exist."
 
     # compare
-    echo "Running diff -s ${expectedPluginsYaml} ${actualPluginsYaml}"
-    diff -s "${expectedPluginsYaml}" "${actualPluginsYaml}" || DIFF_FOUND="y"
-    echo "Running diff -s ${expectedPluginsYamlMinimal} ${actualPluginsYamlMinimal}"
-    diff -s "${expectedPluginsYamlMinimal}" "${actualPluginsYamlMinimal}" || DIFF_FOUND="y"
-    echo "Running diff -s ${expectedPluginCatalog} ${actualPluginCatalog}"
-    diff -s "${expectedPluginCatalog}" "${actualPluginCatalog}" || DIFF_FOUND="y"
-    echo "Running diff -s ${expectedPluginCatalogOffline} ${actualPluginCatalogOffline}"
-    diff -s "${expectedPluginCatalogOffline}" "${actualPluginCatalogOffline}" || DIFF_FOUND="y"
+    echo "Running diff -sy --suppress-common-lines ${expectedPluginsYaml} ${actualPluginsYaml}"
+    diff -sy --suppress-common-lines "${expectedPluginsYaml}" "${actualPluginsYaml}" || DIFF_FOUND="y"
+    echo "Running diff -sy --suppress-common-lines ${expectedPluginsYamlMinimal} ${actualPluginsYamlMinimal}"
+    diff -sy --suppress-common-lines "${expectedPluginsYamlMinimal}" "${actualPluginsYamlMinimal}" || DIFF_FOUND="y"
+    echo "Running diff -sy --suppress-common-lines ${expectedPluginCatalog} ${actualPluginCatalog}"
+    diff -sy --suppress-common-lines "${expectedPluginCatalog}" "${actualPluginCatalog}" || DIFF_FOUND="y"
+    echo "Running diff -sy --suppress-common-lines ${expectedPluginCatalogOffline} ${actualPluginCatalogOffline}"
+    diff -sy --suppress-common-lines "${expectedPluginCatalogOffline}" "${actualPluginCatalogOffline}" || DIFF_FOUND="y"
     if [ -n "${DIFF_FOUND:-}" ]; then
       if [[ $CORRECT_TESTS -eq 1 ]]; then
         echo "Diff found. Correcting the expected files..."
