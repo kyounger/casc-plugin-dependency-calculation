@@ -23,17 +23,25 @@ CORRECT_TESTS="${CORRECT_TESTS:-0}"
 
 for testName in $TESTS; do
     testDir="${SCRIPT_DIR}/$testName"
+    echo "====================================================="
     echo "TEST INFO: Testing $(basename $testDir)..."
+    echo "====================================================="
     expectedPluginsYaml="${testDir}/expected-plugins.yaml"
+    expectedPluginsYamlMinimal="${testDir}/expected-plugins-minimal.yaml"
+    expectedPluginsYamlMinimalGen="${testDir}/expected-plugins-minimal-for-generation-only.yaml"
     expectedPluginCatalog="${testDir}/expected-plugin-catalog.yaml"
     expectedPluginCatalogOffline="${testDir}/expected-plugin-catalog-offline.yaml"
     actualPluginsYaml="${testDir}/actual-plugins.yaml"
+    actualPluginsYamlMinimal="${testDir}/actual-plugins-minimal.yaml"
+    actualPluginsYamlMinimalGen="${testDir}/actual-plugins-minimal-for-generation-only.yaml"
     actualPluginCatalog="${testDir}/actual-plugin-catalog.yaml"
     actualPluginCatalogOffline="${testDir}/actual-plugin-catalog-offline.yaml"
 
     # ensure files exist
     touch \
       "${expectedPluginsYaml}" \
+      "${expectedPluginsYamlMinimal}" \
+      "${expectedPluginsYamlMinimalGen}" \
       "${expectedPluginCatalog}" \
       "${expectedPluginCatalogOffline}"
 
@@ -42,26 +50,38 @@ for testName in $TESTS; do
 
     # resulting files exist?
     [ -f "${actualPluginsYaml}" ] || die "Resulting file '$actualPluginsYaml' doesn't exist."
+    [ -f "${actualPluginsYamlMinimal}" ] || die "Resulting file '$actualPluginsYamlMinimal' doesn't exist."
+    [ -f "${actualPluginsYamlMinimalGen}" ] || die "Resulting file '$actualPluginsYamlMinimalGen' doesn't exist."
     [ -f "${actualPluginCatalog}" ] || die "Resulting file '$actualPluginCatalog' doesn't exist."
     [ -f "${actualPluginCatalogOffline}" ] || die "Resulting file '$actualPluginCatalogOffline' doesn't exist."
 
     # compare
-    echo "Diff ${expectedPluginsYaml} vs ${actualPluginsYaml}"
+    echo "Running diff -s ${expectedPluginsYaml} ${actualPluginsYaml}"
     diff -s "${expectedPluginsYaml}" "${actualPluginsYaml}" || DIFF_FOUND="y"
-    echo "Diff ${expectedPluginCatalog} vs ${actualPluginCatalog}"
+    echo "Running diff -s ${expectedPluginsYamlMinimal} ${actualPluginsYamlMinimal}"
+    diff -s "${expectedPluginsYamlMinimal}" "${actualPluginsYamlMinimal}" || DIFF_FOUND="y"
+    echo "Running diff -s ${expectedPluginsYamlMinimalGen} ${actualPluginsYamlMinimalGen}"
+    diff -s "${expectedPluginsYamlMinimalGen}" "${actualPluginsYamlMinimalGen}" || DIFF_FOUND="y"
+    echo "Running diff -s ${expectedPluginCatalog} ${actualPluginCatalog}"
     diff -s "${expectedPluginCatalog}" "${actualPluginCatalog}" || DIFF_FOUND="y"
-    echo "Diff ${expectedPluginCatalogOffline} vs ${actualPluginCatalogOffline}"
+    echo "Running diff -s ${expectedPluginCatalogOffline} ${actualPluginCatalogOffline}"
     diff -s "${expectedPluginCatalogOffline}" "${actualPluginCatalogOffline}" || DIFF_FOUND="y"
     if [ -n "${DIFF_FOUND:-}" ]; then
       if [[ $CORRECT_TESTS -eq 1 ]]; then
         echo "Diff found. Correcting the expected files..."
         cp -v "${actualPluginsYaml}" "${expectedPluginsYaml}"
+        cp -v "${actualPluginsYamlMinimal}" "${expectedPluginsYamlMinimal}"
+        cp -v "${actualPluginsYamlMinimalGen}" "${expectedPluginsYamlMinimalGen}"
         cp -v "${actualPluginCatalog}" "${expectedPluginCatalog}"
         cp -v "${actualPluginCatalogOffline}" "${expectedPluginCatalogOffline}"
       else
+        echo "====================================================="
         die "TEST ERROR: Test $(basename $testDir) failed. See above."
+        echo "====================================================="
       fi
     else
+    echo "====================================================="
     echo "TEST INFO: Test $(basename $testDir) was SUCCESSFUL."
+    echo "====================================================="
     fi
 done
