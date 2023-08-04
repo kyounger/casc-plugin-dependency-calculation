@@ -72,7 +72,7 @@ configurations:
       prometheus:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/prometheus/2.2.3/prometheus.hpi"
       resource-disposer:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/resource-disposer/0.22/resource-disposer.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/resource-disposer/0.23/resource-disposer.hpi"
       robot:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/robot/3.4.0/robot.hpi"
       slack:

@@ -10,4 +10,5 @@ cd "$(cd "$(dirname "$0")" && pwd)"
     -c "actual-plugin-catalog.yaml" \
     -C "actual-plugin-catalog-offline.yaml" \
     -s \
+    -g "actual-plugins-minimal-for-generation-only.yaml" \
     -G "actual-plugins-minimal.yaml"

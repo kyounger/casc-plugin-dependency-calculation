@@ -38,9 +38,10 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -t          The instance type (oc, oc-traditional, cm, mm)
 
     -F FILE     Final target of the resulting plugins.yaml
-    -G FILE     Final target of the resulting plugins-minimal.yaml
     -c FILE     Final target of the resulting plugin-catalog.yaml
     -C FILE     Final target of the resulting plugin-catalog-offline.yaml
+    -g FILE     Final target of the resulting plugins-minimal-for-generation-only.yaml
+    -G FILE     Final target of the resulting plugins-minimal.yaml
 
     -d          Download plugins to use later (e.g. PFILE in exec hooks)
     -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
@@ -79,7 +80,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts iIhv:xf:F:G:c:C:m:MRsSt:VdD:e: opt; do
+while getopts iIhv:xf:F:g:G:c:C:m:MRsSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -101,6 +102,8 @@ while getopts iIhv:xf:F:G:c:C:m:MRsSt:VdD:e: opt; do
             PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
         F)  FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
+            ;;
+        g)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN=$OPTARG
             ;;
         G)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL=$OPTARG
             ;;
@@ -219,6 +222,7 @@ setScriptVars() {
   # final location stuff
   FINAL_TARGET_PLUGIN_YAML_PATH="${FINAL_TARGET_PLUGIN_YAML_PATH:-}"
   FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL="${FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL:-}"
+  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN="${FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN:-}"
   FINAL_TARGET_PLUGIN_CATALOG="${FINAL_TARGET_PLUGIN_CATALOG:-}"
   FINAL_TARGET_PLUGIN_CATALOG_OFFLINE="${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}"
 
@@ -916,6 +920,7 @@ createPluginCatalogAndPluginsYaml() {
   # final target stuff
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL"
+  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN"
   [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || cp -v "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
   [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || cp -v "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
 
