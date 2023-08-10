@@ -6,11 +6,11 @@ cd "$(cd "$(dirname "$0")" && pwd)"
     -v '2.387.3.5' \
     -t mm \
     -f "source-plugins.yaml" \
-    -F "actual-plugins.yaml" \
-    -c "actual-plugin-catalog.yaml" \
-    -C "actual-plugin-catalog-offline.yaml" \
+    -F "actual/plugins.yaml" \
+    -c "actual/plugin-catalog.yaml" \
+    -C "actual/plugin-catalog-offline.yaml" \
     -s \
-    -g "actual-plugins-minimal-for-generation-only.yaml" \
-    -G "actual-plugins-minimal.yaml" \
+    -g "actual/plugins-minimal-for-generation-only.yaml" \
+    -G "actual/plugins-minimal.yaml" \
     -d \
     -D 'http://plugin-catalog/plugins/PNAME/PVERSION/PNAME.hpi'

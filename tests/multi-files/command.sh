@@ -8,7 +8,7 @@ cd "$(cd "$(dirname "$0")" && pwd)"
     -f "source-plugins-core.yaml" \
     -f "source-plugins-additional.yaml" \
     -s \
-    -G "actual-plugins-minimal.yaml" \
+    -G "actual/plugins-minimal.yaml" \
     && die "TEST ERROR: Should have failed with a 'duplicate plugins' exception" \
     || echo "TEST INFO: the error above is expected. Now running with deduplication."
 
@@ -18,9 +18,9 @@ cd "$(cd "$(dirname "$0")" && pwd)"
     -M \
     -f "source-plugins-core.yaml" \
     -f "source-plugins-additional.yaml" \
-    -F "actual-plugins.yaml" \
-    -c "actual-plugin-catalog.yaml" \
-    -C "actual-plugin-catalog-offline.yaml" \
+    -F "actual/plugins.yaml" \
+    -c "actual/plugin-catalog.yaml" \
+    -C "actual/plugin-catalog-offline.yaml" \
     -s \
-    -g "actual-plugins-minimal-for-generation-only.yaml" \
-    -G "actual-plugins-minimal.yaml"
+    -g "actual/plugins-minimal-for-generation-only.yaml" \
+    -G "actual/plugins-minimal.yaml"
