@@ -301,6 +301,8 @@ createTargetDirs() {
   TARGET_PLUGINS_YAML_SANITIZED="${TARGET_PLUGINS_YAML}.sanitized.yaml"
   TARGET_PLUGINS_YAML_ORIG_SANITIZED="${TARGET_PLUGINS_YAML}.orig.sanitized.yaml"
   TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT="${TARGET_PLUGINS_YAML_ORIG_SANITIZED}.txt"
+  TARGET_PLUGINS_SOURCED_YAML="${TARGET_PLUGINS_YAML}.sourced.yaml"
+  TARGET_PLUGINS_SOURCED_YAML_TXT="${TARGET_PLUGINS_SOURCED_YAML}.txt"
   TARGET_PLUGINS_YAML_MINIMAL_SANITIZED="${TARGET_PLUGINS_YAML_MINIMAL}.sanitized.yaml"
   TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED="${TARGET_PLUGINS_YAML_MINIMAL_GEN}.sanitized.yaml"
   TARGET_PLUGIN_CATALOG_ORIG_SANITIZED="${TARGET_PLUGIN_CATALOG}.orig.sanitized.yaml"
@@ -401,22 +403,6 @@ copyOrExtractMetaInformation() {
     fi
   fi
 
-  case "${PLUGIN_SOURCE}" in
-      all)
-        LIST_OF_PLUGINS=$(yq '.plugins[].id ' "$PLUGIN_YAML_PATH" | xargs)
-        ;;
-      gen)
-        LIST_OF_PLUGINS="${CATEGORY_GENERATION_ONLY_ARR[@]}"
-        ;;
-      *) die "Plugin source '${PLUGIN_SOURCE}' not recognised." ;;
-  esac
-  # caching internally
-  unset TARGET_PLUGINS_SOURCED_ARR
-  declare -g -A TARGET_PLUGINS_SOURCED_ARR
-  for key in $LIST_OF_PLUGINS; do
-    TARGET_PLUGINS_SOURCED_ARR["$key"]="$key"
-  done
-
   # save a copy of the original json files
   cp "${PLUGIN_YAML_PATH}" "${TARGET_PLUGINS_YAML_ORIG}"
   # copy again and sanitize (better for comparing later)
@@ -431,6 +417,29 @@ copyOrExtractMetaInformation() {
   while IFS=: read -r key value; do
     TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR["$key"]="${value:=$key}"
   done < "$TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT"
+
+  # create source list
+  case "${PLUGIN_SOURCE}" in
+      all)
+        LIST_OF_PLUGINS=$(yq '.plugins[].id ' "$TARGET_PLUGINS_YAML_ORIG" | xargs)
+        ;;
+      gen)
+        LIST_OF_PLUGINS="${CATEGORY_GENERATION_ONLY_ARR[@]}"
+        ;;
+      *) die "Plugin source '${PLUGIN_SOURCE}' not recognised." ;;
+  esac
+  # caching internally
+  unset TARGET_PLUGINS_SOURCED_ARR
+  declare -g -A TARGET_PLUGINS_SOURCED_ARR
+  for key in $LIST_OF_PLUGINS; do
+    TARGET_PLUGINS_SOURCED_ARR["$key"]="$key"
+  done
+  # let's create the source list yaml
+  cp "$TARGET_PLUGINS_YAML_ORIG" "$TARGET_PLUGINS_SOURCED_YAML"
+  for p in $(yq '.plugins[].id ' "$TARGET_PLUGINS_SOURCED_YAML" | xargs); do
+    isSourced "$p" || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
+  done
+  yq '.plugins[].id' "${TARGET_PLUGINS_SOURCED_YAML}" | sort > "${TARGET_PLUGINS_SOURCED_YAML_TXT}"
 
   info "Sanity checking '$PLUGIN_YAML_PATH' for missing custom requirements."
   local missingRequirements=
@@ -563,7 +572,7 @@ staticCheckOfRequiredPlugins() {
   # Static check: loop through plugins and ensure they exist in the downloaded update-center
   debug "Plugins in ${TARGET_UC_ONLINE}:"
   debug "${TARGET_UC_ONLINE_ALL}"
-  PLUGINS_MISSING_ONLINE=$(comm -23 "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT}" "${TARGET_UC_ONLINE_ALL}" | xargs)
+  PLUGINS_MISSING_ONLINE=$(comm -23 "${TARGET_PLUGINS_SOURCED_YAML_TXT}" "${TARGET_UC_ONLINE_ALL}" | xargs)
   local missingPlugins= p=
   for p in $PLUGINS_MISSING_ONLINE; do
     if ! hasCustomAnnotation "$p"; then
@@ -967,9 +976,9 @@ createPluginCatalogAndPluginsYaml() {
 
 
   #temporarily reformat each file to allow a proper yaml merge
-  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > $TARGET_GEN/temp0.yaml
-  yq e '.plugins[].id | {.: {}}' "$TARGET_PLUGINS_YAML_ORIG_SANITIZED" > $TARGET_GEN/temp1.yaml
-  yq e '.configurations[].includePlugins' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
+  yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > $TARGET_GEN/temp0.yaml
+  yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGINS_SOURCED_YAML" > $TARGET_GEN/temp1.yaml
+  yq e '.configurations[].includePlugins|... comments=""' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
 
   #merge our newly found dependencies from the calculated plugin-catalog.yaml into plugins.yaml
   yq ea 'select(fileIndex == 0) * select(fileIndex == 1) * select(fileIndex == 2) | keys | {"plugins": ([{"id": .[]}])}' \
