@@ -174,24 +174,28 @@ extractAndFormat() {
   cat "${1}" | sed 's/.*\post(//' | sed 's/);\w*$//' | jq .
 }
 
+downloadUpdateCenter() {
+  local -r UC_FILE=$1
+  local -r UC_DIR=$2
+  local -r UC_URL=$3
+  if [[ -f "${UC_FILE}" ]] && [ $REFRESH_UC -eq 0 ]; then
+    info "$(basename "${UC_FILE}") already exists, remove it or use the '-R' flag" >&2
+    return 1
+  else
+    info "Caching UC to '${UC_FILE}'"
+    mkdir -p "$UC_DIR"
+    curl --fail -sSL -o "${UC_FILE}" "${UC_URL}"
+    return 0
+  fi
+}
+
 cacheUpdateCenter() {
   #download update-center.json file and cache it
-  if [[ -f "${CB_UPDATE_CENTER_CACHE_FILE}" ]] && [ $REFRESH_UC -eq 0 ]; then
-    info "$(basename ${CB_UPDATE_CENTER_CACHE_FILE}) already exist, remove it or use the '-R' flag" >&2
-  else
-    info "Caching UC to '$CB_UPDATE_CENTER_CACHE_FILE'"
-    mkdir -p $CB_UPDATE_CENTER_CACHE_DIR
-    curl --fail -sSL -o "${CB_UPDATE_CENTER_CACHE_FILE}" "${CB_UPDATE_CENTER_URL_WITH_VERSION}"
-  fi
+  downloadUpdateCenter "$CB_UPDATE_CENTER_CACHE_FILE" "$CB_UPDATE_CENTER_CACHE_DIR" "$CB_UPDATE_CENTER_URL_WITH_VERSION" || true
 
   [ $CHECK_CVES -eq 1 ] || return 0
   #download update-center.actual.json file and cache it
-  if [[ -f "${CB_UPDATE_CENTER_ACTUAL}" ]] && [ $REFRESH_UC -eq 0 ]; then
-    info "$(basename ${CB_UPDATE_CENTER_ACTUAL}) already exist, remove it or use the '-R' flag" >&2
-  else
-    info "Caching UC actual.json to '$CB_UPDATE_CENTER_ACTUAL'"
-    mkdir -p $CB_UPDATE_CENTER_ACTUAL_CACHE_DIR
-    curl --fail -sSL -o "${CB_UPDATE_CENTER_ACTUAL}" "${JENKINS_UC_ACTUAL_URL}"
+  if downloadUpdateCenter "$CB_UPDATE_CENTER_ACTUAL" "$CB_UPDATE_CENTER_ACTUAL_CACHE_DIR" "$JENKINS_UC_ACTUAL_URL"; then
     jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
     jq -r '.name' "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}" | sort -u > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"
     jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
