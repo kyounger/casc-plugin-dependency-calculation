@@ -13,6 +13,7 @@ INCLUDE_OPTIONAL=0
 DOWNLOAD=0
 VERBOSE_LOG=0
 REFRESH_UC=0
+REFRESH_UC_MINUTES=60
 MINIMAL_PLUGIN_LIST="${MINIMAL_PLUGIN_LIST:-0}"
 DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
 CI_VERSION=
@@ -178,8 +179,8 @@ downloadUpdateCenter() {
   local -r UC_FILE=$1
   local -r UC_DIR=$2
   local -r UC_URL=$3
-  if [[ -f "${UC_FILE}" ]] && [ $REFRESH_UC -eq 0 ]; then
-    info "$(basename "${UC_FILE}") already exists, remove it or use the '-R' flag" >&2
+  if [ "$(find "$UC_FILE" -mmin -"$REFRESH_UC_MINUTES")" ] && [ $REFRESH_UC -eq 0 ]; then
+    info "$(basename "${UC_FILE}") is less than $REFRESH_UC_MINUTES minutes old. You can remove it or use the '-R' flag to refresh the cache." >&2
     return 1
   else
     info "Caching UC to '${UC_FILE}'"
