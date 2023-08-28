@@ -606,9 +606,6 @@ cat << EOF
   List of all plugins to be expected on controller after startup:
     cat "${TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP#${CURRENT_DIR}/}"
 
-  List of all plugins to be expected on controller after startup:
-    cat "${TARGET_PLUGIN_LIST_ALL_EXPECTED#${CURRENT_DIR}/}"
-
 EOF
 
   if [ -f "$TARGET_PLUGIN_CATALOG_ORIG" ]; then
