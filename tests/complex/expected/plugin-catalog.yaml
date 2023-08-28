@@ -1,0 +1,87 @@
+type: "plugin-catalog"
+version: "1"
+name: "my-plugin-catalog"
+displayName: "My Plugin Catalog"
+configurations:
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
+    includePlugins:
+      ansicolor:
+        version: "1.0.2"
+      artifactory:
+        version: "3.18.8"
+      aws-java-sdk:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-cloudformation:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-codebuild:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-ecr:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-ecs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-efs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-iam:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-logs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-sns:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-sqs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-ssm:
+        version: "1.12.406-374.v4cdf53953691"
+      badge:
+        version: "1.9.1"
+      build-failure-analyzer:
+        version: "2.4.1"
+      build-monitor-plugin:
+        version: "1.14-681.vd6817317a_2b_7"
+      cobertura:
+        version: "1.17"
+      code-coverage-api:
+        version: "4.4.0"
+      configuration-as-code-groovy:
+        version: "1.1"
+      ec2-fleet:
+        version: "2.7.1"
+      envinject:
+        version: "2.908.v66a_774b_31d93"
+      envinject-api:
+        version: "1.199.v3ce31253ed13"
+      gerrit-trigger:
+        version: "2.39.0"
+      h2-api:
+        version: "11.1.4.199-12.v9f4244395f7a_"
+      hashicorp-vault-plugin:
+        version: "360.v0a_1c04cf807d"
+      ivy:
+        version: "2.4"
+      job-dsl:
+        version: "1.83"
+      parameterized-scheduler:
+        version: "1.2"
+      parameterized-trigger:
+        version: "2.45"
+      pipeline-maven:
+        version: "1274.v870c8cb_fa_369"
+      pipeline-utility-steps:
+        version: "2.15.1.1"
+      prometheus:
+        version: "2.2.3"
+      resource-disposer:
+        version: "0.23"
+      robot:
+        version: "3.4.0"
+      slack:
+        version: "664.vc9a_90f8b_c24a_"
+      swarm:
+        version: "3.40"
+      throttle-concurrents:
+        version: "2.13"
+      uno-choice:
+        version: "2.7"
+      ws-cleanup:
+        version: "0.45"

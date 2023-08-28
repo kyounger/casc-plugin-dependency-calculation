@@ -8,5 +8,6 @@ echo "Running with:
 - PVERSION=$PVERSION
 - PFILE=$PFILE
 - PURL=$PURL
+- PURL_OFFICIAL=$PURL_OFFICIAL
 "
 echo WOULD NOW RUN: jf rt u "$PFILE" "my-local-repo/plugins/$PNAME/$PVERSION/"

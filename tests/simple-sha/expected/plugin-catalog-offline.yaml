@@ -1,0 +1,12 @@
+type: "plugin-catalog"
+version: "1"
+name: "my-plugin-catalog"
+displayName: "My Offline Plugin Catalog"
+configurations:
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
+    includePlugins:
+      beer:
+        sha256: "d+zYx5gk0d4MPxbY0SX2wA0Wt2TVQ5pfklK0fCVzCak="
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/beer/42.v776b_04d96de3/beer.hpi"

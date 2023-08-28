@@ -2,10 +2,10 @@
 jenkins.war
 cb-*.war
 jenkins-plugin-manager.jar
-plugins.yaml
-plugin-catalog.yaml
+./plugins.yaml
+./plugin-catalog.yaml
 update-center.json
 target
 
 # used in the tests
-actual-*.yaml
+**/actual/*.yaml

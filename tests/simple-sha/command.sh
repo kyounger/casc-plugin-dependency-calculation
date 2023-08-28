@@ -2,6 +2,8 @@
 
 cd "$(cd "$(dirname "$0")" && pwd)"
 
+export WITH_SHA256=1
+
 "${RUN_CMD}" \
     -v '2.387.3.5' \
     -t mm \
