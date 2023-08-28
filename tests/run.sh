@@ -76,7 +76,7 @@ for testName in $TESTS; do
       cp -v "${actualDir}/"* "${expectedDir}"
       addSummary "Test '$testName' corrected"
     else
-      addSummary "Test '$testName' failed"
+      addSummary "Test '$testName' failed (diff -s ${expectedDir} ${actualDir})"
       echo "====================================================="
       echo "Using: diff -s ${expectedPluginsYaml} ${actualPluginsYaml}"
       errorMe "TEST ERROR: Test $testName failed. See above."
