@@ -8,4 +8,4 @@ update-center.json
 target
 
 # used in the tests
-actual/*.yaml
+**/actual/*.yaml
