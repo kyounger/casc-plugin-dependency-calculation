@@ -1,5 +1,29 @@
 # CloudBees CasC Plugin Catalog and Transitive Dependencies Calculator
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+## Intro
+
+- [Intro](#intro)
+- [:information_source: Removal of plugin-installation-manager-tool dependency](#information_source-removal-of-plugin-installation-manager-tool-dependency)
+- [New Features](#new-features)
+- [Requirements](#requirements)
+- [Usage](#usage)
+- [Plugin Metadata](#plugin-metadata)
+  - [File header](#file-header)
+  - [Comment style - `line`](#comment-style---line)
+  - [Comment style - `header`](#comment-style---header)
+  - [Comment style - `footer`](#comment-style---footer)
+- [Unnecessary Plugins Check](#unnecessary-plugins-check)
+- [Tests](#tests)
+- [Examples](#examples)
+- [Notes](#notes)
+- [Advanced](#advanced)
+- [TODO](#todo)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+## Intro
+
 Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (any tier), and it will:
 
 1. Generate the `plugin-catalog.yaml` file for you in the same directory, including all versions and transitive dependencies.
