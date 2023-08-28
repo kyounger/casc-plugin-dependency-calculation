@@ -21,7 +21,7 @@ plugins:
   - id: ansicolor # 3rd lst src min gen
   - id: artifactory # 3rd lst src min gen
   - id: badge # 3rd lst src min gen
-  - id: blueocean # cap lst src min gen
+  - id: blueocean # cap lst cve src min gen
   - id: build-failure-analyzer # 3rd lst src min gen
   - id: build-monitor-plugin # 3rd lst src min gen
   - id: cloudbees-casc-client # cap lst src min gen

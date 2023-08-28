@@ -38,7 +38,7 @@ plugins:
   - id: aws-java-sdk-sqs # 3rd lst dep src min
   - id: aws-java-sdk-ssm # 3rd lst dep src min
   - id: badge # 3rd lst src min gen
-  - id: blueocean # cap lst src min gen
+  - id: blueocean # cap lst cve src min gen
   - id: bootstrap5-api # cap dep
   - id: branch-api # cap lst dep src
   - id: build-failure-analyzer # 3rd lst src min gen
@@ -51,7 +51,7 @@ plugins:
   - id: cloudbees-quiet-start # cap lst src min gen
   - id: cobertura # 3rd lst src min gen
   - id: code-coverage-api # 3rd lst dep src min
-  - id: config-file-provider # cap lst dep src min
+  - id: config-file-provider # cap lst dep cve src min
   - id: configuration-as-code # cap lst dep src min
   - id: configuration-as-code-groovy # 3rd lst src min gen
   - id: data-tables-api # cap lst dep src

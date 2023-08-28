@@ -10,7 +10,7 @@ configurations:
       ansicolor:
         version: "1.0.2"
       artifactory:
-        version: "3.18.8"
+        version: "3.18.9"
       aws-java-sdk:
         version: "1.12.406-374.v4cdf53953691"
       aws-java-sdk-cloudformation:
@@ -46,7 +46,7 @@ configurations:
       configuration-as-code-groovy:
         version: "1.1"
       ec2-fleet:
-        version: "2.7.1"
+        version: "3.0.0"
       envinject:
         version: "2.908.v66a_774b_31d93"
       envinject-api:
