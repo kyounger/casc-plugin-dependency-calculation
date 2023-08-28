@@ -1073,7 +1073,7 @@ EOF
     info "!!! Candidates for potential removal from the plugins.yaml !!!"
     info "=============================================================="
     info "The following plugins are either bootstrap or dependencies of CAP plugins: $considerForPotentialRemoval"
-    info "For more details run: p=<PLUGIN_TO_CHECK>; grep -E \".* -> \$p($| )\" \"${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}\""
+    info "For more details run: p=<PLUGIN_TO_CHECK>; grep -E \".* -> \$p($| )\" \"${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}\""
     for pToCheck in $considerForPotentialRemoval; do
       if isBootstrapPlugin "$pToCheck"; then
         info "  ${pToCheck}: is a bootstrap plugin"
