@@ -185,7 +185,7 @@ downloadUpdateCenter() {
   else
     info "Caching UC to '${UC_FILE}'"
     mkdir -p "$UC_DIR"
-    curl --fail -sSL -o "${UC_FILE}" "${UC_URL}"
+    curl --fail -sSL -o "${UC_FILE}" "${UC_URL}" || die "Curl command failed for URL: ${UC_URL}"
     return 0
   fi
 }
@@ -1270,7 +1270,7 @@ checkCIVersions() {
   if [ -z "${CI_VERSION:-}" ]; then
     info "CI_VERSION not set. Determining latest version..."
     CB_HELM_REPO_INDEX="${TARGET_BASE_DIR}/helm-chart.index.yaml"
-    curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}"
+    curl --fail -sSL -o "${CB_HELM_REPO_INDEX}" "${CB_HELM_REPO_URL}" || die "Curl command failed for URL: ${CB_HELM_REPO_URL}"
     LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
     CI_VERSION=$(cv=$LATEST_CHART_VERSION yq '.entries.cloudbees-core[]|select(.version == env(cv)).appVersion' "${CB_HELM_REPO_INDEX}")
   fi
