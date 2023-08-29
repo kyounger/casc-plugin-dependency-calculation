@@ -8,19 +8,21 @@ function die() {
   exit 1
 }
 function errorMe() {
-  cat <<< "ERROR: $@" 1>&2
+  cat <<< "ERROR: $*" 1>&2
 }
 export -f die
 
 # tool vars
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export RUN_CMD="$(dirname $SCRIPT_DIR)/run.sh"
-export TARGET_BASE_DIR="$(dirname $SCRIPT_DIR)/target"
-export CACHE_BASE_DIR="$(dirname $SCRIPT_DIR)/.cache"
+RUN_CMD="$(dirname "$SCRIPT_DIR")/run.sh"
+export RUN_CMD
+TARGET_BASE_DIR="$(dirname "$SCRIPT_DIR")/target"
+export TARGET_BASE_DIR
+CACHE_BASE_DIR="$(dirname "$SCRIPT_DIR")/.cache"
+export CACHE_BASE_DIR
 
 # test vars
-RESULTS_DIR=$(mktemp -d)
-ALL_TESTS=$(find $SCRIPT_DIR -mindepth 1 -maxdepth 1 -type d  -printf '%f\n')
+ALL_TESTS=$(find "$SCRIPT_DIR" -mindepth 1 -maxdepth 1 -type d  -printf '%f\n')
 TESTS="${1:-$ALL_TESTS}"
 CORRECT_TESTS="${CORRECT_TESTS:-0}"
 
@@ -30,7 +32,7 @@ addSummary() {
 
 for testName in $TESTS; do
   testDir="${SCRIPT_DIR}/$testName"
-  testName=$(basename $testDir)
+  testName=$(basename "$testDir")
   echo "====================================================="
   echo "TEST INFO: Testing $testName..."
   echo "====================================================="
@@ -48,6 +50,7 @@ for testName in $TESTS; do
   actualPluginCatalogOffline="${actualDir}/plugin-catalog-offline.yaml"
 
   # ensure files exist
+  rm -rf "${actualDir}"
   mkdir -p "${actualDir}"
   mkdir -p "${expectedDir}"
   touch \

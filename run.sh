@@ -3,9 +3,7 @@
 set -euo pipefail
 
 # Initialize our own variables:
-INDENT_SPACING='  '
 ADD_TS="${ADD_TS:-0}"
-STDERR_LOG_SUFFIX='.stderr.log'
 CHECK_CVES=1
 PLUGIN_SOURCE="${PLUGIN_SOURCE:-all}"
 INCLUDE_BOOTSTRAP=0
@@ -109,7 +107,7 @@ while getopts AiIhv:xf:F:g:G:c:C:m:MRsSt:VdD:e: opt; do
             ;;
         e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
-        f)  PLUGIN_YAML_PATHS_FILES[$PLUGIN_YAML_PATHS_IDX]=$OPTARG
+        f)  PLUGIN_YAML_PATHS_FILES["$PLUGIN_YAML_PATHS_IDX"]=$OPTARG
             PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
         F)  FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
@@ -148,31 +146,31 @@ shift "$((OPTIND-1))"   # Discard the options and sentinel --
 
 # debug
 debug() {
-  [ $VERBOSE_LOG -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $@" 1>&2
+  [ $VERBOSE_LOG -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $*" 1>&2
 }
 
 timestampMe() {
-  [ $ADD_TS -eq 0 ] || date -u +"%H:%M:%S "
+  [ "$ADD_TS" -eq 0 ] || date -u +"%H:%M:%S "
 }
 
 # echo to stderr
 info() {
-  cat <<< "$(timestampMe)INFO: $@" 1>&2
+  cat <<< "$(timestampMe)INFO: $*" 1>&2
 }
 
 # echo to stderr
 warn() {
-  cat <<< "$(timestampMe)WARN: $@" 1>&2
+  cat <<< "$(timestampMe)WARN: $*" 1>&2
 }
 
 # echo to stderr and exit 1
 die() {
-  cat <<< "$(timestampMe)ERROR: $@" 1>&2
+  cat <<< "$(timestampMe)ERROR: $*" 1>&2
   exit 1
 }
 
 extractAndFormat() {
-  cat "${1}" | sed 's/.*\post(//' | sed 's/);\w*$//' | jq .
+  sed 's/.*\post(//' "${1}" | sed 's/);\w*$//' | jq .
 }
 
 downloadUpdateCenter() {
@@ -223,7 +221,6 @@ setScriptVars() {
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
   PLUGIN_CATALOG_OFFLINE_URL_BASE="${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}"
   #calculated vars
-  CB_UPDATE_CENTER_URL="$CB_UPDATE_CENTER/update-center.json"
   CB_UPDATE_CENTER_URL_WITH_VERSION="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
   #cache some stuff locally, sure cache directory exists
@@ -234,7 +231,6 @@ setScriptVars() {
   CB_UPDATE_CENTER_ACTUAL="${CB_UPDATE_CENTER_ACTUAL_CACHE_DIR}/update-center.actual.json"
   CB_UPDATE_CENTER_ACTUAL_WARNINGS="${CB_UPDATE_CENTER_ACTUAL}.plugins.warnings.json"
 
-  PIMT_JAR_CACHE_DIR="$CACHE_BASE_DIR/pimt-jar"
   PLUGINS_CACHE_DIR="$CACHE_BASE_DIR/plugins"
 
   # final location stuff
@@ -256,6 +252,7 @@ setScriptVars() {
     # looping through in reverse order since the yq ireduce does not overwrite existing entries.
     for ((i=${#PLUGIN_YAML_PATHS_FILES[@]}-1; i>=0; i--)); do
       local currentPluginYamlPath="${PLUGIN_YAML_PATHS_FILES[$i]}"
+      # shellcheck disable=SC2016
       tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}")
       echo "$tmpStr" > "$PLUGIN_YAML_PATH"
     done
@@ -276,9 +273,6 @@ createTargetDirs() {
   TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE="${TARGET_GEN}/deps-processed-tree-single.txt"
   TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL="${TARGET_GEN}/deps-processed-non-top-level.txt"
   TARGET_PLUGIN_DEPENDENCY_RESULTS="${TARGET_GEN}/deps-processed-results.yaml"
-  TARGET_NONE="${TARGET_GEN}/pimt-without-plugins.yaml"
-  TARGET_ALL="${TARGET_GEN}/pimt-with-plugins.yaml"
-  TARGET_DIFF="${TARGET_GEN}/pimt-diff.yaml"
   TARGET_UC_ONLINE="${TARGET_GEN}/update-center-online.json"
   TARGET_UC_ONLINE_ALL="${TARGET_UC_ONLINE}.plugins.all.txt"
   TARGET_UC_ONLINE_ALL_WITH_URL="${TARGET_UC_ONLINE}.plugins.all-with-url.txt"
@@ -288,7 +282,6 @@ createTargetDirs() {
   TARGET_UC_ONLINE_DEPRECATED_PLUGINS="${TARGET_UC_ONLINE}.deprecated.txt"
   TARGET_OPTIONAL_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.optional.txt"
   TARGET_REQUIRED_DEPS="${TARGET_UC_ONLINE}.plugins.all.deps.required.txt"
-  TARGET_PLATFORM_PLUGINS="${TARGET_GEN}/platform-plugins.json"
   TARGET_ENVELOPE="${TARGET_UC_ONLINE}.envelope.json"
   TARGET_ENVELOPE_BOOTSTRAP="${TARGET_ENVELOPE}.bootstrap.txt"
   TARGET_ENVELOPE_NON_BOOTSTRAP="${TARGET_ENVELOPE}.non-bootstrap.txt"
@@ -333,9 +326,6 @@ fillTagArrayFromLine() {
           "$CATEGORY_GENERATION_ONLY")
             CATEGORY_GENERATION_ONLY_ARR["$p"]="${p}"
             ;;
-          "$CATEGORY_MINIMAL")
-            CATEGORY_MINIMAL_ARR["$p"]="${p}"
-            ;;
           *) die "Tag '${tag}' not recognised." ;;
       esac
     done
@@ -375,7 +365,7 @@ fillTagArray() {
 copyOrExtractMetaInformation() {
   info "Sanity checking '$PLUGIN_YAML_PATH' for duplicates."
   if ! equalPlugins; then
-    if [ $DEDUPLICATE_PLUGINS -eq 1 ]; then
+    if [ "$DEDUPLICATE_PLUGINS" -eq 1 ]; then
       info "Found duplicates above - removing from '$PLUGIN_YAML_PATH'."
       deDupes=$(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") \
         yq -i '.plugins = env(deDupes)' "$PLUGIN_YAML_PATH"
@@ -402,10 +392,7 @@ copyOrExtractMetaInformation() {
 
   unset CATEGORY_GENERATION_ONLY_ARR
   declare -g -A CATEGORY_GENERATION_ONLY_ARR
-  unset CATEGORY_MINIMAL_ARR
-  declare -g -A CATEGORY_MINIMAL_ARR
   fillTagArrayFromLine "$CATEGORY_GENERATION_ONLY"
-  fillTagArrayFromLine "$CATEGORY_MINIMAL"
   info "Parsing annotations...finished."
 
   # save a copy of the original json files
@@ -429,7 +416,7 @@ copyOrExtractMetaInformation() {
         LIST_OF_PLUGINS=$(yq '.plugins[].id ' "$TARGET_PLUGINS_YAML_ORIG" | xargs)
         ;;
       gen)
-        LIST_OF_PLUGINS="${CATEGORY_GENERATION_ONLY_ARR[@]}"
+        LIST_OF_PLUGINS="${CATEGORY_GENERATION_ONLY_ARR[*]}"
         ;;
       *) die "Plugin source '${PLUGIN_SOURCE}' not recognised." ;;
   esac
@@ -515,23 +502,11 @@ copyOrExtractMetaInformation() {
       TARGET_ENVELOPE_BOOTSTRAP_ARR["$key"]="${value:=$key}"
   done < "$TARGET_ENVELOPE_BOOTSTRAP"
 
-  unset TARGET_ENVELOPE_NON_BOOTSTRAP_ARR
-  declare -g -A TARGET_ENVELOPE_NON_BOOTSTRAP_ARR
-  while IFS=: read -r key value; do
-      TARGET_ENVELOPE_NON_BOOTSTRAP_ARR["$key"]="${value:=$key}"
-  done < "${TARGET_ENVELOPE_NON_BOOTSTRAP}"
-
   unset TARGET_ENVELOPE_ALL_CAP_ARR
   declare -g -A TARGET_ENVELOPE_ALL_CAP_ARR
   while IFS=: read -r key value; do
       TARGET_ENVELOPE_ALL_CAP_ARR["$key"]="${value:=$key}"
   done < "${TARGET_ENVELOPE_ALL_CAP}"
-
-  unset TARGET_UC_ONLINE_ARR
-  declare -g -A TARGET_UC_ONLINE_ARR
-  while IFS=: read -r key value; do
-      TARGET_UC_ONLINE_ARR["$key"]="${value:=$key}"
-  done < "${TARGET_UC_ONLINE_ALL}"
 
   unset TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR
   declare -g -A TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR
@@ -544,12 +519,6 @@ copyOrExtractMetaInformation() {
   while IFS=: read -r key value; do
       TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR["$key"]="${value:=$key}"
   done < "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
-
-  unset TARGET_ENVELOPE_ALL_CAP_WITH_VERSION_ARR
-  declare -g -A TARGET_ENVELOPE_ALL_CAP_WITH_VERSION_ARR
-  while IFS=: read -r key value; do
-      TARGET_ENVELOPE_ALL_CAP_WITH_VERSION_ARR["$key"]=$value
-  done < "$TARGET_ENVELOPE_ALL_CAP_WITH_VERSION"
 
   unset TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
   declare -g -A TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
@@ -578,7 +547,7 @@ staticCheckOfRequiredPlugins() {
   debug "Plugins in ${TARGET_UC_ONLINE}:"
   debug "${TARGET_UC_ONLINE_ALL}"
   PLUGINS_MISSING_ONLINE=$(comm -23 "${TARGET_PLUGINS_SOURCED_YAML_TXT}" "${TARGET_UC_ONLINE_ALL}" | xargs)
-  local missingPlugins= p=
+  local missingPlugins='' p=''
   for p in $PLUGINS_MISSING_ONLINE; do
     if ! hasCustomAnnotation "$p"; then
       warn "Missing online plugin '$p' which does not have a custom version or URL annotation."
@@ -593,25 +562,25 @@ cat << EOF
 ======================= Summary ====================================
 
   See the new files:
-    yq . "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}"
-    yq . "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
-    yq . "${TARGET_PLUGIN_CATALOG_OFFLINE#${CURRENT_DIR}/}"
+    yq . "${TARGET_PLUGINS_YAML#"${CURRENT_DIR}"/}"
+    yq . "${TARGET_PLUGIN_CATALOG#"${CURRENT_DIR}"/}"
+    yq . "${TARGET_PLUGIN_CATALOG_OFFLINE#"${CURRENT_DIR}"/}"
 
   Difference between current vs new plugins.yaml
-    diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_SANITIZED#${CURRENT_DIR}/}"
+    diff "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_SANITIZED#"${CURRENT_DIR}"/}"
 
   Dependency tree of processed plugins:
-    cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
 
   List of all plugins to be expected on controller after startup:
-    cat "${TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP#${CURRENT_DIR}/}"
+    cat "${TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP#"${CURRENT_DIR}"/}"
 
 EOF
 
   if [ -f "$TARGET_PLUGIN_CATALOG_ORIG" ]; then
 cat << EOF
   Difference between current vs new plugin-catalog.yaml (if existed)
-    diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGIN_CATALOG#${CURRENT_DIR}/}"
+    diff "${TARGET_PLUGIN_CATALOG_ORIG_SANITIZED#"${CURRENT_DIR}"/}" "${TARGET_PLUGIN_CATALOG#"${CURRENT_DIR}"/}"
 
 EOF
   fi
@@ -619,19 +588,19 @@ EOF
   if [ -f "$TARGET_PLUGINS_YAML_MINIMAL" ]; then
 cat << EOF
   Minimal viable plugins.yaml
-    yq . "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
+    yq . "${TARGET_PLUGINS_YAML_MINIMAL#"${CURRENT_DIR}"/}"
 
     Difference: provided list vs minimal viable list:
-    diff -y "${TARGET_PLUGINS_YAML#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL#${CURRENT_DIR}/}"
+    diff -y "${TARGET_PLUGINS_YAML#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_MINIMAL#"${CURRENT_DIR}"/}"
 
   Minimal non-viable plugins.yaml (to be used a static starter list)
-    yq . "${TARGET_PLUGINS_YAML_MINIMAL_GEN#${CURRENT_DIR}/}"
+    yq . "${TARGET_PLUGINS_YAML_MINIMAL_GEN#"${CURRENT_DIR}"/}"
 
     Difference: original list vs starter list:
-    diff -y "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#${CURRENT_DIR}/}"
+    diff -y "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#"${CURRENT_DIR}"/}"
 
     Difference: minimal viable list vs starter list:
-    diff -y "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED#${CURRENT_DIR}/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#${CURRENT_DIR}/}"
+    diff -y "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#"${CURRENT_DIR}"/}"
 
 EOF
   fi
@@ -679,7 +648,7 @@ isNotAffectedByCVE() {
         patternNoQuotes=${pattern//\"/}
         debug "Plugin '$1' - testing version '$pluginVersion' against pattern '$patternNoQuotes' from file '$pWarnings'"
         if [[ "$pluginVersion" =~ ^($patternNoQuotes)$ ]]; then
-          info "Plugin '$1' - affected by '$w' according to pattern '$patternNoQuotes' from file '$(basename $pWarnings)'"
+          info "Plugin '$1' - affected by '$w' according to pattern '$patternNoQuotes' from file '$(basename "$pWarnings")'"
           isAffected=1
         fi
       done
@@ -712,7 +681,7 @@ addToDeps() {
   local curEntry="${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR[$newKey]-}"
   if [[ -n "$curEntry" ]]; then
     debug "Appending $newKey -> $newEntry"
-    TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR["$newKey"]=$(printf "${curEntry}\n${newEntry}")
+    TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR["$newKey"]=$(printf "%s\n%s" "${curEntry}" "${newEntry}")
   else
     debug "First time $newKey -> $newEntry"
     TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR["$newKey"]="$newEntry"
@@ -854,7 +823,7 @@ processAllDeps() {
   local p=
   for p in $LIST_OF_PLUGINS; do
     info "Processing dependencies of '$p'"
-    processDeps $p
+    processDeps "$p"
   done
   # sort processed into files for later
   printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED}"
@@ -901,7 +870,7 @@ createPluginCatalogAndPluginsYaml() {
   yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   local customVersion customUrl
-  for pluginName in ${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}; do
+  for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
     # accounting for custom plugins
     customVersion="${ANNOTATION_CUSTOM_VERSION_PREFIX_ARR[$pluginName]-}"
     customUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$pluginName]-}"
@@ -927,7 +896,7 @@ createPluginCatalogAndPluginsYaml() {
   touch "${targetFile}"
   yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
-  for pluginName in ${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}; do
+  for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
     # accounting for custom plugins
     customUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$pluginName]-}"
     customVersion="${ANNOTATION_CUSTOM_VERSION_PREFIX_ARR[$pluginName]-}"
@@ -960,7 +929,7 @@ createPluginCatalogAndPluginsYaml() {
     if [ $DOWNLOAD -eq 1 ]; then
       pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginUrlOfficial//*\//}"
       # Copy to cache...
-      mkdir -p $(dirname "${pluginDest}")
+      mkdir -p "$(dirname "${pluginDest}")"
       if [ ! -f "$pluginDest" ]; then
         info "Downloading plugin from ${pluginUrlOfficial} -> ${pluginDest}"
         curl -sL "${pluginUrlOfficial}" -o "${pluginDest}"
@@ -981,9 +950,9 @@ createPluginCatalogAndPluginsYaml() {
 
 
   #temporarily reformat each file to allow a proper yaml merge
-  yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > $TARGET_GEN/temp0.yaml
-  yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGINS_SOURCED_YAML" > $TARGET_GEN/temp1.yaml
-  yq e '.configurations[].includePlugins|... comments=""' "$TARGET_PLUGIN_CATALOG" > $TARGET_GEN/temp2.yaml
+  yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > "$TARGET_GEN"/temp0.yaml
+  yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGINS_SOURCED_YAML" > "$TARGET_GEN"/temp1.yaml
+  yq e '.configurations[].includePlugins|... comments=""' "$TARGET_PLUGIN_CATALOG" > "$TARGET_GEN"/temp2.yaml
 
   #merge our newly found dependencies from the calculated plugin-catalog.yaml into plugins.yaml
   yq ea 'select(fileIndex == 0) * select(fileIndex == 1) * select(fileIndex == 2) | keys | {"plugins": ([{"id": .[]}])}' \
@@ -1085,8 +1054,10 @@ EOF
 
   # are we currently processing multi-versions?
   if [ -n "${TMP_PLUGIN_CATALOG:-}" ]; then
+    # shellcheck disable=SC2016
     tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}")
     echo "$tmpStr" > "$TMP_PLUGIN_CATALOG"
+    # shellcheck disable=SC2016
     tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}")
     echo "$tmpStr" > "$TMP_PLUGIN_CATALOG_OFFLINE"
     info "Copying temp (collective) plugin catalog files to the target files."
@@ -1102,7 +1073,7 @@ EOF
     | sort -u > "$TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP"
 
   # how about creating a minimal list?
-  if [ ${MINIMAL_PLUGIN_LIST} -eq 1 ]; then
+  if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
     reducedPluginList=$(yq '.plugins[].id' "$TARGET_PLUGINS_YAML")
     removeAllBootstrap
     reducedList=1
@@ -1159,7 +1130,7 @@ addEntrySha256() {
 }
 
 sortDepsByDepth() {
-  local p= matchedLines=
+  local p='' matchedLines=''
   for p in $1; do
     matchedLines=$(grep -oE ".* -> $p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" | sed -e 's/\ $//' | sort -u)
     while IFS= read -r line; do
@@ -1232,7 +1203,8 @@ reducePluginList() {
 }
 
 removeFromReduceList() {
-    local tmpReducedPluginList=$(grep -vE "^$1$" <<< "$reducedPluginList")
+    local tmpReducedPluginList
+    tmpReducedPluginList=$(grep -vE "^$1$" <<< "$reducedPluginList")
     reducedPluginList=$tmpReducedPluginList
     reducedList=1
 }
@@ -1274,7 +1246,11 @@ checkCIVersions() {
     LATEST_CHART_VERSION=$(yq '.entries.cloudbees-core[].version' "${CB_HELM_REPO_INDEX}" | sort -rV | head -n 1)
     CI_VERSION=$(cv=$LATEST_CHART_VERSION yq '.entries.cloudbees-core[]|select(.version == env(cv)).appVersion' "${CB_HELM_REPO_INDEX}")
   fi
-  [ -n "${CI_VERSION:-}" ] && info "CI_VERSION set to '$CI_VERSION'." || die "CI_VERSION was empty."
+  if [ -n "${CI_VERSION:-}" ]; then
+    info "CI_VERSION set to '$CI_VERSION'."
+  else
+    die "CI_VERSION was empty."
+  fi
 
   IFS=', ' read -r -a CI_VERSIONS_ARRAY <<< "$CI_VERSION"
   if [ ${#CI_VERSIONS_ARRAY[@]} -gt 1 ]; then
