@@ -1,0 +1,3 @@
+plugins:
+# tag:custom:url=https://www.brewery.com/download/beer.jpi
+- id: beer
