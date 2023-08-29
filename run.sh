@@ -377,11 +377,9 @@ copyOrExtractMetaInformation() {
   if ! equalPlugins; then
     if [ $DEDUPLICATE_PLUGINS -eq 1 ]; then
       info "Found duplicates above - removing from '$PLUGIN_YAML_PATH'."
-      yq . "$PLUGIN_YAML_PATH"
       deDupes=$(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") \
         yq -i '.plugins = env(deDupes)' "$PLUGIN_YAML_PATH"
       equalPlugins || die "Something went wrong with the deduplication. Please check the commands used..."
-      yq . "$PLUGIN_YAML_PATH"
     else
       die "Please use '-M' or remove the duplicate plugin above before continuing."
     fi
