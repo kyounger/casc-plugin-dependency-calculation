@@ -10,7 +10,7 @@ configurations:
       ansicolor:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/ansicolor/1.0.2/ansicolor.hpi"
       artifactory:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/artifactory/3.18.8/artifactory.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/artifactory/3.18.9/artifactory.hpi"
       aws-java-sdk:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk/1.12.406-374.v4cdf53953691/aws-java-sdk.hpi"
       aws-java-sdk-cloudformation:
@@ -46,7 +46,7 @@ configurations:
       configuration-as-code-groovy:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/configuration-as-code-groovy/1.1/configuration-as-code-groovy.hpi"
       ec2-fleet:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/ec2-fleet/2.7.1/ec2-fleet.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ec2-fleet/3.0.0/ec2-fleet.hpi"
       envinject:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/envinject/2.908.v66a_774b_31d93/envinject.hpi"
       envinject-api:

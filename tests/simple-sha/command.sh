@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -eu
 cd "$(cd "$(dirname "$0")" && pwd)"
 
 export WITH_SHA256=1

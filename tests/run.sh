@@ -4,8 +4,11 @@ set -euo pipefail
 
 # echo to stderr and exit 1
 function die() {
-  cat <<< "ERROR: $@" 1>&2
+  errorMe "$@"
   exit 1
+}
+function errorMe() {
+  cat <<< "ERROR: $@" 1>&2
 }
 export -f die
 
@@ -73,10 +76,10 @@ for testName in $TESTS; do
       cp -v "${actualDir}/"* "${expectedDir}"
       addSummary "Test '$testName' corrected"
     else
-      addSummary "Test '$testName' failed"
+      addSummary "Test '$testName' failed (diff -s ${expectedDir} ${actualDir})"
       echo "====================================================="
       echo "Using: diff -s ${expectedPluginsYaml} ${actualPluginsYaml}"
-      die "TEST ERROR: Test $testName failed. See above."
+      errorMe "TEST ERROR: Test $testName failed. See above."
     fi
   else
   addSummary "Test '$testName' successful"

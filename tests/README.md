@@ -1,5 +1,14 @@
 # Tests
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Running all tests](#running-all-tests)
+- [Running a single test](#running-a-single-test)
+- [Creating or correcting tests](#creating-or-correcting-tests)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Running all tests
 
 Run the full test suite by running:
