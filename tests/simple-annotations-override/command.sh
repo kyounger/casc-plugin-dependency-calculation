@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -eu
 cd "$(cd "$(dirname "$0")" && pwd)"
 
 "${RUN_CMD}" \
