@@ -1,0 +1,6 @@
+plugins:
+- id: beer # gen
+- id: ec2-fleet # gen
+# this plugin doesn't exist in the CI version 2.387.3.5
+# if we didn't use '-A' (plugins for generation only) the script would fail
+- id: aws-java-sdk-kinesis
