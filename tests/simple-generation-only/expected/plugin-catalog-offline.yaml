@@ -1,0 +1,35 @@
+type: "plugin-catalog"
+version: "1"
+name: "my-plugin-catalog"
+displayName: "My Offline Plugin Catalog"
+configurations:
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
+    includePlugins:
+      aws-java-sdk:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk/1.12.406-374.v4cdf53953691/aws-java-sdk.hpi"
+      aws-java-sdk-cloudformation:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-cloudformation/1.12.406-374.v4cdf53953691/aws-java-sdk-cloudformation.hpi"
+      aws-java-sdk-codebuild:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-codebuild/1.12.406-374.v4cdf53953691/aws-java-sdk-codebuild.hpi"
+      aws-java-sdk-ecr:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-ecr/1.12.406-374.v4cdf53953691/aws-java-sdk-ecr.hpi"
+      aws-java-sdk-ecs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-ecs/1.12.406-374.v4cdf53953691/aws-java-sdk-ecs.hpi"
+      aws-java-sdk-efs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-efs/1.12.406-374.v4cdf53953691/aws-java-sdk-efs.hpi"
+      aws-java-sdk-iam:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-iam/1.12.406-374.v4cdf53953691/aws-java-sdk-iam.hpi"
+      aws-java-sdk-logs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-logs/1.12.406-374.v4cdf53953691/aws-java-sdk-logs.hpi"
+      aws-java-sdk-sns:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-sns/1.12.406-374.v4cdf53953691/aws-java-sdk-sns.hpi"
+      aws-java-sdk-sqs:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-sqs/1.12.406-374.v4cdf53953691/aws-java-sdk-sqs.hpi"
+      aws-java-sdk-ssm:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/aws-java-sdk-ssm/1.12.406-374.v4cdf53953691/aws-java-sdk-ssm.hpi"
+      beer:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/beer/42.v776b_04d96de3/beer.hpi"
+      ec2-fleet:
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ec2-fleet/3.0.0/ec2-fleet.hpi"
