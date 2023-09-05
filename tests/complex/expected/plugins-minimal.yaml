@@ -14,67 +14,65 @@
 #  dep - installed as dependency
 #  lst - installed because it was listed
 #  src - used as a source plugin for this list
-#  min - is part of the viable 'minimal' set of plugins
-#  gen - is part of the non-viable 'generation-only' set of plugins
 
 plugins:
-  - id: ansicolor # 3rd lst src min gen
-  - id: ant # cap lst dep src min
-  - id: artifactory # 3rd lst src min gen
-  - id: aws-credentials # cap lst dep src min
-  - id: aws-java-sdk # 3rd lst dep src min
-  - id: aws-java-sdk-cloudformation # 3rd lst dep src min
-  - id: aws-java-sdk-codebuild # 3rd lst dep src min
-  - id: aws-java-sdk-ecr # 3rd lst dep src min
-  - id: aws-java-sdk-ecs # 3rd lst dep src min
-  - id: aws-java-sdk-efs # 3rd lst dep src min
-  - id: aws-java-sdk-elasticbeanstalk # cap lst dep src min
-  - id: aws-java-sdk-iam # 3rd lst dep src min
-  - id: aws-java-sdk-logs # 3rd lst dep src min
-  - id: aws-java-sdk-sns # 3rd lst dep src min
-  - id: aws-java-sdk-sqs # 3rd lst dep src min
-  - id: aws-java-sdk-ssm # 3rd lst dep src min
-  - id: badge # 3rd lst src min gen
-  - id: blueocean # cap lst cve src min gen
-  - id: build-failure-analyzer # 3rd lst src min gen
-  - id: build-monitor-plugin # 3rd lst src min gen
-  - id: checks-api # cap dep min
-  - id: cloudbees-casc-client # cap lst src min gen
-  - id: cloudbees-casc-items-controller # cap lst src min gen
-  - id: cloudbees-quiet-start # cap lst src min gen
-  - id: cobertura # 3rd lst src min gen
-  - id: code-coverage-api # 3rd lst dep src min
-  - id: config-file-provider # cap lst dep cve src min
-  - id: configuration-as-code # cap lst dep src min
-  - id: configuration-as-code-groovy # 3rd lst src min gen
-  - id: ec2-fleet # 3rd lst src min gen
-  - id: email-ext # cap lst src min gen
-  - id: envinject # 3rd lst src min gen
-  - id: envinject-api # 3rd lst dep src min
-  - id: forensics-api # cap lst dep src min
-  - id: gerrit-trigger # 3rd lst src min gen
-  - id: gradle # cap lst dep src min
-  - id: h2-api # 3rd lst dep src min
-  - id: hashicorp-vault-plugin # 3rd lst cve src min gen
-  - id: ivy # 3rd lst src min gen
-  - id: jacoco # cap lst src min gen
-  - id: job-dsl # 3rd lst src min gen
-  - id: maven-plugin # cap lst dep src min
-  - id: parameterized-scheduler # 3rd lst src min gen
-  - id: parameterized-trigger # 3rd lst src min gen
-  - id: pipeline-maven # 3rd lst src min gen
-  - id: pipeline-stage-view # cap lst src min gen
-  - id: pipeline-utility-steps # 3rd lst cve src min gen
-  - id: prism-api # cap lst dep src min
-  - id: prometheus # 3rd lst src min gen
-  - id: resource-disposer # 3rd lst dep src min
-  - id: robot # 3rd lst src min gen
-  - id: saml # cap lst src min gen
-  - id: slack # 3rd lst src min gen
-  - id: ssh-agent # cap lst src min gen
-  - id: ssh-slaves # cap lst dep src min
-  - id: swarm # 3rd lst src min gen
-  - id: throttle-concurrents # 3rd lst src min gen
-  - id: timestamper # cap lst src min gen
-  - id: uno-choice # 3rd lst src min gen
-  - id: ws-cleanup # 3rd lst src min gen
+  - id: ansicolor # 3rd lst src
+  - id: ant # cap lst dep
+  - id: artifactory # 3rd lst src
+  - id: aws-credentials # cap lst dep
+  - id: aws-java-sdk # 3rd lst dep
+  - id: aws-java-sdk-cloudformation # 3rd lst dep
+  - id: aws-java-sdk-codebuild # 3rd lst dep
+  - id: aws-java-sdk-ecr # 3rd lst dep
+  - id: aws-java-sdk-ecs # 3rd lst dep
+  - id: aws-java-sdk-efs # 3rd lst dep
+  - id: aws-java-sdk-elasticbeanstalk # cap lst dep
+  - id: aws-java-sdk-iam # 3rd lst dep
+  - id: aws-java-sdk-logs # 3rd lst dep
+  - id: aws-java-sdk-sns # 3rd lst dep
+  - id: aws-java-sdk-sqs # 3rd lst dep
+  - id: aws-java-sdk-ssm # 3rd lst dep
+  - id: badge # 3rd lst src
+  - id: blueocean # cap lst cve src
+  - id: build-failure-analyzer # 3rd lst src
+  - id: build-monitor-plugin # 3rd lst src
+  - id: checks-api # cap dep
+  - id: cloudbees-casc-client # cap lst src
+  - id: cloudbees-casc-items-controller # cap lst src
+  - id: cloudbees-quiet-start # cap lst src
+  - id: cobertura # 3rd lst src
+  - id: code-coverage-api # 3rd lst dep
+  - id: config-file-provider # cap lst dep cve
+  - id: configuration-as-code # cap lst dep
+  - id: configuration-as-code-groovy # 3rd lst src
+  - id: ec2-fleet # 3rd lst src
+  - id: email-ext # cap lst src
+  - id: envinject # 3rd lst src
+  - id: envinject-api # 3rd lst dep
+  - id: forensics-api # cap lst dep
+  - id: gerrit-trigger # 3rd lst src
+  - id: gradle # cap lst dep
+  - id: h2-api # 3rd lst dep
+  - id: hashicorp-vault-plugin # 3rd lst cve src
+  - id: ivy # 3rd lst src
+  - id: jacoco # cap lst src
+  - id: job-dsl # 3rd lst src
+  - id: maven-plugin # cap lst dep
+  - id: parameterized-scheduler # 3rd lst src
+  - id: parameterized-trigger # 3rd lst src
+  - id: pipeline-maven # 3rd lst src
+  - id: pipeline-stage-view # cap lst src
+  - id: pipeline-utility-steps # 3rd lst cve src
+  - id: prism-api # cap lst dep
+  - id: prometheus # 3rd lst src
+  - id: resource-disposer # 3rd lst dep
+  - id: robot # 3rd lst src
+  - id: saml # cap lst src
+  - id: slack # 3rd lst src
+  - id: ssh-agent # cap lst src
+  - id: ssh-slaves # cap lst dep
+  - id: swarm # 3rd lst src
+  - id: throttle-concurrents # 3rd lst src
+  - id: timestamper # cap lst src
+  - id: uno-choice # 3rd lst src
+  - id: ws-cleanup # 3rd lst src

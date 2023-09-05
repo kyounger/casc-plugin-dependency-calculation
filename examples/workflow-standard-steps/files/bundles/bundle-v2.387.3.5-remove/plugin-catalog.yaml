@@ -1,0 +1,35 @@
+type: "plugin-catalog"
+version: "1"
+name: "my-plugin-catalog"
+displayName: "My Plugin Catalog"
+configurations:
+  - description: "These are Non-CAP plugins for version 2.387.3.5"
+    prerequisites:
+      productVersion: "[2.387.3.5]"
+    includePlugins:
+      aws-java-sdk:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-cloudformation:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-codebuild:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-ecr:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-ecs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-efs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-iam:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-logs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-sns:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-sqs:
+        version: "1.12.406-374.v4cdf53953691"
+      aws-java-sdk-ssm:
+        version: "1.12.406-374.v4cdf53953691"
+      ec2-fleet:
+        version: "3.0.0"
+      mock-security-realm:
+        version: "54.v07143c60a_992"

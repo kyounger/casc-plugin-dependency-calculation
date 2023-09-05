@@ -14,10 +14,8 @@
 #  dep - installed as dependency
 #  lst - installed because it was listed
 #  src - used as a source plugin for this list
-#  min - is part of the viable 'minimal' set of plugins
-#  gen - is part of the non-viable 'generation-only' set of plugins
 
 plugins:
   # tag:custom:url=https://www.brewery.com/download/beer.jpi
-  - id: beer # 3rd lst src min gen
-  - id: git-client # cap lst src min gen
+  - id: beer # 3rd lst src
+  - id: git-client # cap lst src

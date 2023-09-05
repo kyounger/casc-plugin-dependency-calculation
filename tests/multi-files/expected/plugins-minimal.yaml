@@ -14,11 +14,9 @@
 #  dep - installed as dependency
 #  lst - installed because it was listed
 #  src - used as a source plugin for this list
-#  min - is part of the viable 'minimal' set of plugins
-#  gen - is part of the non-viable 'generation-only' set of plugins
 
 plugins:
-  - id: beer # 3rd lst src min gen
-  - id: branch-api # cap dep min
-  - id: git-client # cap lst src min gen
-  - id: job-dsl # 3rd lst src min gen
+  - id: beer # 3rd lst src
+  - id: branch-api # cap dep
+  - id: git-client # cap lst src
+  - id: job-dsl # 3rd lst src

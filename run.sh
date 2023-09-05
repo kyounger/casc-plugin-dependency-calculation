@@ -31,9 +31,6 @@ JENKINS_UC_ACTUAL_URL='https://updates.jenkins.io/update-center.actual.json'
 export ANNOTATION_CUSTOM_VERSION_PREFIX="tag:custom:version="
 export ANNOTATION_CUSTOM_URL_PREFIX="tag:custom:url="
 export ANNOTATION_CUSTOM_REQUIRES_PREFIX="tag:custom:requires="
-# special categories added when reducing the plugin list
-export CATEGORY_MINIMAL="min"
-export CATEGORY_GENERATION_ONLY="gen"
 
 show_help() {
 cat << EOF
@@ -70,7 +67,7 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -I          Include bootstrap dependencies in the plugins.yaml
     -m STYLE    Include plugin metadata as comment (line, none)
                     defaults to '$PLUGIN_YAML_COMMENTS_STYLE'
-    -A          Use 'generation-only' plugins as the source list when calculating dependencies.
+    -A          Use 'src' plugins as the source list when calculating dependencies.
     -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
     -S          Disable CVE check against plugins (added to metadata)
 
@@ -130,7 +127,7 @@ while getopts AiIhv:xf:F:g:G:c:C:m:MRsSt:VdD:e: opt; do
             ;;
         R)  REFRESH_UC=1
             ;;
-        A)  PLUGIN_SOURCE=gen
+        A)  PLUGIN_SOURCE=src
             ;;
         s)  MINIMAL_PLUGIN_LIST=1
             ;;
@@ -213,7 +210,7 @@ prereqs() {
     [ -x "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be executable"
   fi
   [[ "$CI_TYPE" =~ ^(mm|oc|cm|oc-traditional)$ ]] || die "CI_TYPE '${CI_TYPE}' not recognised"
-  [[ "$PLUGIN_SOURCE" =~ ^(all|gen)$ ]] || die "PLUGIN_SOURCE '${PLUGIN_SOURCE}' not recognised. See usage."
+  [[ "$PLUGIN_SOURCE" =~ ^(all|src)$ ]] || die "PLUGIN_SOURCE '${PLUGIN_SOURCE}' not recognised. See usage."
 }
 
 setScriptVars() {
@@ -323,8 +320,8 @@ fillTagArrayFromLine() {
     for p in $(tagSearch="${tagSearch}" yq -r '.plugins[]|select(.id|line_comment|capture(env(tagSearch))).id' "$PLUGIN_YAML_PATH" | sort -u); do
       info "Setting $p (${tag}${value:-})"
       case "${tag}" in
-          "$CATEGORY_GENERATION_ONLY")
-            CATEGORY_GENERATION_ONLY_ARR["$p"]="${p}"
+          src)
+            CATEGORY_SRC_ONLY_ARR["$p"]="${p}"
             ;;
           *) die "Tag '${tag}' not recognised." ;;
       esac
@@ -390,9 +387,9 @@ copyOrExtractMetaInformation() {
   fillTagArray "$ANNOTATION_CUSTOM_URL_PREFIX"
   fillTagArray "$ANNOTATION_CUSTOM_REQUIRES_PREFIX"
 
-  unset CATEGORY_GENERATION_ONLY_ARR
-  declare -g -A CATEGORY_GENERATION_ONLY_ARR
-  fillTagArrayFromLine "$CATEGORY_GENERATION_ONLY"
+  unset CATEGORY_SRC_ONLY_ARR
+  declare -g -A CATEGORY_SRC_ONLY_ARR
+  fillTagArrayFromLine 'src'
   info "Parsing annotations...finished."
 
   # save a copy of the original json files
@@ -411,27 +408,38 @@ copyOrExtractMetaInformation() {
   done < "$TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT"
 
   # create source list
+  unset PLUGIN_SOURCE_ARR
+  declare -g -A PLUGIN_SOURCE_ARR
   case "${PLUGIN_SOURCE}" in
       all)
         LIST_OF_PLUGINS=$(yq '.plugins[].id ' "$TARGET_PLUGINS_YAML_ORIG" | xargs)
         ;;
-      gen)
-        LIST_OF_PLUGINS="${CATEGORY_GENERATION_ONLY_ARR[*]}"
+      src)
+        LIST_OF_PLUGINS="${CATEGORY_SRC_ONLY_ARR[*]}"
         ;;
       *) die "Plugin source '${PLUGIN_SOURCE}' not recognised." ;;
   esac
-  # caching internally
-  unset TARGET_PLUGINS_SOURCED_ARR
-  declare -g -A TARGET_PLUGINS_SOURCED_ARR
-  for key in $LIST_OF_PLUGINS; do
-    TARGET_PLUGINS_SOURCED_ARR["$key"]="$key"
+  for srcPlugin in $LIST_OF_PLUGINS; do
+    PLUGIN_SOURCE_ARR["$srcPlugin"]="${srcPlugin}"
   done
   # let's create the source list yaml
   cp "$TARGET_PLUGINS_YAML_ORIG" "$TARGET_PLUGINS_SOURCED_YAML"
   for p in $(yq '.plugins[].id ' "$TARGET_PLUGINS_SOURCED_YAML" | xargs); do
-    isSourced "$p" || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
+    [[ -n "${PLUGIN_SOURCE_ARR[$p]-}" ]] || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
   done
   yq '.plugins[].id' "${TARGET_PLUGINS_SOURCED_YAML}" | sort > "${TARGET_PLUGINS_SOURCED_YAML_TXT}"
+  # are we going to be auto-tagging src plugins?
+  CATEGORY_SRC_ONLY_AUTO_TAG=0
+  if [[ -z "${CATEGORY_SRC_ONLY_ARR[*]:-}" ]]; then
+    if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
+      info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
+      CATEGORY_SRC_ONLY_AUTO_TAG=1
+    else
+      info "No 'src' comments found in the plugin list. Use '-s' to auto-generate comments on final list."
+    fi
+  else
+    info "Some 'src' comments found in the plugin list. Comments will be copied across BUT NOT auto-generated."
+  fi
 
   info "Sanity checking '$PLUGIN_YAML_PATH' for missing custom requirements."
   local missingRequirements=
@@ -572,6 +580,9 @@ cat << EOF
   Dependency tree of processed plugins:
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
 
+  For more details on a plugin, run:
+    p=<PLUGIN_TO_CHECK>; grep -E ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
+
   List of all plugins to be expected on controller after startup:
     cat "${TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP#"${CURRENT_DIR}"/}"
 
@@ -600,7 +611,7 @@ cat << EOF
     diff -y "${TARGET_PLUGINS_YAML_ORIG_SANITIZED#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#"${CURRENT_DIR}"/}"
 
     Difference: minimal viable list vs starter list:
-    diff -y "${TARGET_PLUGINS_YAML_MINIMAL_SANITIZED#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN_SANITIZED#"${CURRENT_DIR}"/}"
+    diff -y "${TARGET_PLUGINS_YAML_MINIMAL#"${CURRENT_DIR}"/}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN#"${CURRENT_DIR}"/}"
 
 EOF
   fi
@@ -614,8 +625,8 @@ isListed() {
   [[ -n "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR[$1]-}" ]]
 }
 
-isSourced() {
-  [[ -n "${TARGET_PLUGINS_SOURCED_ARR[$1]-}" ]]
+needsSourceTag() {
+  [[ -n "${CATEGORY_SRC_ONLY_ARR[$1]-}" ]]
 }
 
 isBootstrapPlugin() {
@@ -987,8 +998,6 @@ Plugin Categories:
  dep - installed as dependency
  lst - installed because it was listed
  src - used as a source plugin for this list
- min - is part of the viable 'minimal' set of plugins
- gen - is part of the non-viable 'generation-only' set of plugins
 EOF
 
   case "${PLUGIN_YAML_COMMENTS_STYLE}" in
@@ -1016,7 +1025,7 @@ EOF
     isDependency "$p" && { pStr="${pStr} dep"; ALL_DEPS_ARR["$p"]="$p"; }
     isDeprecatedPlugin "$p" && pStr="${pStr} old"
     isNotAffectedByCVE "$p" || pStr="${pStr} cve"
-    isSourced "$p" && pStr="${pStr} src"
+    needsSourceTag "$p" && pStr="${pStr} src"
     if [[ "$pStr" =~ cap\ lst.*dep ]] && isCandidateForRemoval "$p"; then
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
     elif [[ "$pStr" =~ bst ]]; then
@@ -1084,11 +1093,6 @@ EOF
       if ! grep -qE "^$k$" <<< "$reducedPluginList"; then
         debug "Removing '$k' from the TARGET_PLUGINS_YAML_MINIMAL"
         k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL}"
-      else
-        # add the minimal annotation
-        for f in "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_MINIMAL}"; do
-          k=$k yq -i 'with(.plugins[]|select(.id == env(k)); . | .id line_comment |= line_comment + " " + env(CATEGORY_MINIMAL))' "${f}"
-        done
       fi
     done
     # copy again and sanitize (better for comparing later)
@@ -1101,10 +1105,10 @@ EOF
       if [[ -n "${ALL_DEPS_ARR[$k]-}" ]]; then
         debug "Removing '$k' from the TARGET_PLUGINS_YAML_MINIMAL_GEN"
         k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL_GEN}"
-      else
+      elif [ "$CATEGORY_SRC_ONLY_AUTO_TAG" -eq 1 ]; then
         # add the generation-only annotation
         for f in "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_MINIMAL}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN}"; do
-          k=$k yq -i 'with(.plugins[]|select(.id == env(k)); . | .id line_comment |= line_comment + " " + env(CATEGORY_GENERATION_ONLY))' "${f}"
+          k=$k yq -i 'with(.plugins[]|select(.id == env(k)); . | .id line_comment |= line_comment + " src")' "${f}"
         done
       fi
     done
