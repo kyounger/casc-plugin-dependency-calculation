@@ -6,6 +6,7 @@
 
 - [Intro](#intro)
 - [:information_source: Removal of plugin-installation-manager-tool dependency](#information_source-removal-of-plugin-installation-manager-tool-dependency)
+- [Source Plugin Management](#source-plugin-management)
 - [New Features](#new-features)
   - [Minimal and Generation-Only Plugins](#minimal-and-generation-only-plugins)
   - [Generation-Only Use Case](#generation-only-use-case)
@@ -39,6 +40,10 @@ Removal of this dependency results in:
 
 - less network bandwidth
 - reduced execution time
+
+## Source Plugin Management
+
+A better way of managing plugin lists has been added. See the [Standard Workflow](examples/workflow-standard-steps/README.md) for more details
 
 ## New Features
 
