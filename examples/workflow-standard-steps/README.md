@@ -251,7 +251,7 @@ diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5
 And, as before, the same can be performed for `2.414.1.4`:
 
 ```sh
-./run.sh -v "2.387.3.5" \
+./run.sh -v "2.414.1.4" \
     -s \
     -A \
     -f "examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5-add/plugins.yaml" \
