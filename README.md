@@ -40,6 +40,10 @@ Removal of this dependency results in:
 - less network bandwidth
 - reduced execution time
 
+## Source Plugin Management
+
+A better way of managing plugin lists has been added. See the [Standard Workflow](examples/workflow-standard-steps/README.md) for more details
+
 ## New Features
 
 - **minimal plugin list** - create a minimal viable list of plugins based on a starting list. See `-s` for more details.
