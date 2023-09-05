@@ -1,6 +1,21 @@
 # Standard Workflow
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Intro](#intro)
+- [Obtaining a `plugins.yaml` from a controller](#obtaining-a-pluginsyaml-from-a-controller)
+- [Preparing your `plugins.yaml`](#preparing-your-pluginsyaml)
+  - [Minimum viable vs raw list](#minimum-viable-vs-raw-list)
+  - [Minimum viable vs generation-only list](#minimum-viable-vs-generation-only-list)
+  - [Manual alterations](#manual-alterations)
+- [Creating your first `plugins.yaml` and `plugin-catalog.yaml`](#creating-your-first-pluginsyaml-and-plugin-catalogyaml)
+- [Updating your `plugins.yaml` and `plugin-catalog.yaml`](#updating-your-pluginsyaml-and-plugin-catalogyaml)
+  - [The reasoning behind the `-A` source plugins only option](#the-reasoning-behind-the--a-source-plugins-only-option)
+- [Making changes](#making-changes)
+  - [Adding a plugin](#adding-a-plugin)
+  - [Removing a plugin](#removing-a-plugin)
+
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Intro
@@ -178,7 +193,7 @@ ERROR: PLUGINS_MISSING_ONLINE: see above.
 
 Using the `-A` option allows us to recreate files using just the source plugins, in effect making it a static set of plugins you wish to install from which to recreate viable lists for all versions.
 
-To test, we run the command but with the `-A` option:
+To test, we repeat the command, but this time with the `-A` option:
 
 ```sh
 ./run.sh -v 2.387.3.5 -f examples/workflow-standard-steps/files/bundles/bundle-v2.414.1.4/plugins.yaml -s -A
