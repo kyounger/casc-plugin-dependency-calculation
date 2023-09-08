@@ -1,0 +1,17 @@
+apiVersion: '1'
+id: 'base-controller'
+description: 'Bundle A'
+parent: "base"
+version: '1'
+availabilityPattern: ".*"
+jcascMergeStrategy: 'override'
+jcasc:
+  - 'jcasc'
+items:
+  - 'items'
+catalog:
+  - 'catalog'
+plugins:
+  - 'plugins'
+variables:
+  - 'variables'

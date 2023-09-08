@@ -1,0 +1,36 @@
+---
+jenkins:
+  systemMessage: "Configured with CasC from ${bundleName}"
+kube:
+  podTemplatesConfiguration:
+    templates:
+    - containers:
+      - args: "9999999"
+        command: "sleep"
+        image: "debian"
+        name: "debian"
+      name: "debian"
+      nodeUsageMode: "NORMAL"
+      label: "build debian"
+unclassified:
+  hibernationConfiguration:
+    activities:
+    - "build"
+    - "web"
+    enabled: true
+    gracePeriod: 900
+  # cloudbeesPrometheus:
+  #   collectingMetricsPeriodInSeconds: 30
+  globalLibraries:
+    libraries:
+    - defaultVersion: "main"
+      name: "platform-library"
+      retriever:
+        modernSCM:
+          scm:
+            git:
+              credentialsId: "github-token-ro"
+              id: "965b9fca-8cfa-4ed5-81c2-97c2ea4292c2"
+              remote: "https://github.com/tsmp-falcon-platform/jenkins-library"
+              traits:
+              - "gitBranchDiscovery"
