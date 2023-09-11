@@ -16,5 +16,5 @@
 #  src - used as a source plugin for this list
 
 plugins:
-  - id: branch-api # cap dep
+  - id: branch-api # cap lst dep
   - id: job-dsl # 3rd lst src

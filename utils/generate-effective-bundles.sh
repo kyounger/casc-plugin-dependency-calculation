@@ -62,7 +62,8 @@ findBundleChain() {
     fi
 }
 
-copyFiles() {
+generate() {
+    local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         versionDir=$(dirname "$bundleDir")
@@ -75,6 +76,13 @@ copyFiles() {
         rm -rf "${targetDir}"
         BUNDLE_PARENTS="$bundleDirName"
         findBundleChain "${bundleDir}"
+        if [ -n "${bundleFilter}" ]; then
+            local skipBundle=1
+            for b in ${BUNDLE_PARENTS}; do
+                if [[ "$b" == "$bundleFilter" ]]; then skipBundle=0; fi
+            done
+            if [ "$skipBundle" -eq 1 ]; then continue; fi
+        fi
         i=0
         echo "INFO: Creating bundle '$targetDirName' using parents '$BUNDLE_PARENTS'"
         for parent in ${BUNDLE_PARENTS:-}; do
@@ -128,7 +136,7 @@ copyFiles() {
             fi
         done
         # remove the parent from the effective bundles
-        bp=" (inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
+        bp=" (version: $versionDirName, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
         # remove the parent and availabilityPattern from the effective bundles
         yq -i 'del(.parent)|del(.availabilityPattern)' "${targetBundleYaml}"
         # reinstate the checksum of bundle files to provide unique version which does change with git
@@ -155,8 +163,7 @@ replacePluginCatalog() {
     echo "Removing any previous catalog files..."
     rm -f "${bundleDir}/catalog/"*
     finalPluginCatalogYaml="${bundleDir}/catalog/plugin-catalog.yaml"
-
-    local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion" -c "$finalPluginCatalogYaml")
+    local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
     while IFS= read -r -d '' f; do
         DEP_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$bundleDir")
@@ -170,13 +177,22 @@ replacePluginCatalog() {
 }
 
 ## create plugin commands
-pluginCommands()
-{
-    local rootDir="${1:-"$RAW_DIR"}"
+pluginCommands() {
+    local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
+        bundleDirName=$(basename "$bundleDir")
         versionDir=$(dirname "$bundleDir")
         versionDirName=$(basename "$versionDir")
+        BUNDLE_PARENTS="$bundleDirName"
+        findBundleChain "${bundleDir}"
+        if [ -n "${bundleFilter}" ]; then
+            local skipBundle=1
+            for b in ${BUNDLE_PARENTS}; do
+                if [[ "$b" == "$bundleFilter" ]]; then skipBundle=0; fi
+            done
+            if [ "$skipBundle" -eq 1 ]; then continue; fi
+        fi
         while IFS= read -r -d '' f; do
             local DEP_TOOL_CMD=("$DEP_TOOL" -v "$versionDirName" -s -f "$f" -G "$f")
             echo "Running... ${DEP_TOOL_CMD[*]}"
@@ -186,11 +202,7 @@ pluginCommands()
                 echo "Set DRY_RUN=0 to execute."
             fi
         done < <(listPluginYamlsIn "$bundleDir")
-    done < <(listBundleYamlsIn "$rootDir")
-}
-
-generate() {
-    copyFiles
+    done < <(listBundleYamlsIn "$RAW_DIR")
 }
 
 commitAnyChangesInEffectiveBundles() {
@@ -206,11 +218,11 @@ commitAnyChangesInEffectiveBundles() {
 }
 
 # main
-ACTION="${1:-generate}"
-echo "Running action '$ACTION'..."
-processVars
+ACTION="${1:-}"
+echo "Running action '$ACTION'"
 case $ACTION in
     pre-commit)
+        processVars
         PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
         $0 generate > "$PRE_COMMIT_LOG" 2>&1
         # fail if non-cached diffs found in effective bundles
@@ -220,14 +232,17 @@ case $ACTION in
             die "Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
         ;;
     generate)
-        generate
+        processVars
+        shift
+        generate "${@}"
         ;;
     pluginCommands)
+        processVars
         shift
         pluginCommands "${@}"
         ;;
     *)
-        die "Unknown action '$ACTION'"
+        die "Unknown action '$ACTION' (actions are: pre-commit, generate, pluginCommands)"
         ;;
 esac
 echo "Done"
