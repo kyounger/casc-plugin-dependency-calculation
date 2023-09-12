@@ -16,7 +16,6 @@ export TARGET_BASE_DIR='' CACHE_BASE_DIR=''
 TARGET_BASE_DIR="${TARGET_BASE_DIR:-"$(dirname "$DEP_TOOL")/target"}"
 CACHE_BASE_DIR="${CACHE_BASE_DIR:-"$(dirname "$DEP_TOOL")/.cache"}"
 
-
 die() { echo "$*"; exit 1; }
 
 debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
@@ -64,6 +63,7 @@ findBundleChain() {
 
 generate() {
     local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
+    local versionFilter="${2:-${VERSION_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         versionDir=$(dirname "$bundleDir")
@@ -72,8 +72,11 @@ generate() {
         targetDirName="${versionDirName}-${bundleDirName}"
         targetDir="$EFFECTIVE_DIR/${targetDirName}"
         targetBundleYaml="${targetDir}/bundle.yaml"
-        # recreate effective bundle
-        rm -rf "${targetDir}"
+        if [ -n "${versionFilter}" ]; then
+            local skipBundle=1
+            if [[ "$versionDirName" == "$versionFilter" ]]; then skipBundle=0; fi
+            if [ "$skipBundle" -eq 1 ]; then continue; fi
+        fi
         BUNDLE_PARENTS="$bundleDirName"
         findBundleChain "${bundleDir}"
         if [ -n "${bundleFilter}" ]; then
@@ -83,6 +86,8 @@ generate() {
             done
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
+        # recreate effective bundle
+        rm -rf "${targetDir}"
         i=0
         echo "INFO: Creating bundle '$targetDirName' using parents '$BUNDLE_PARENTS'"
         for parent in ${BUNDLE_PARENTS:-}; do
@@ -160,8 +165,6 @@ replacePluginCatalog() {
     local bundleDir=$1
     local ciVersion=$2
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<CI_VERSION>)"
-    echo "Removing any previous catalog files..."
-    rm -f "${bundleDir}/catalog/"*
     finalPluginCatalogYaml="${bundleDir}/catalog/plugin-catalog.yaml"
     local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
     while IFS= read -r -d '' f; do
@@ -170,6 +173,8 @@ replacePluginCatalog() {
     DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
     echo "Running... ${DEP_TOOL_CMD[*]}"
     if [ "$DRY_RUN" -eq 0 ]; then
+        echo "Removing any previous catalog files..."
+        rm -f "${bundleDir}/catalog/"*
         "${DEP_TOOL_CMD[@]}"
     else
         echo "Set DRY_RUN=0 to execute."
@@ -179,11 +184,17 @@ replacePluginCatalog() {
 ## create plugin commands
 pluginCommands() {
     local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
+    local versionFilter="${2:-${VERSION_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
         versionDir=$(dirname "$bundleDir")
         versionDirName=$(basename "$versionDir")
+        if [ -n "${versionFilter}" ]; then
+            local skipBundle=1
+            if [[ "$versionDirName" == "$versionFilter" ]]; then skipBundle=0; fi
+            if [ "$skipBundle" -eq 1 ]; then continue; fi
+        fi
         BUNDLE_PARENTS="$bundleDirName"
         findBundleChain "${bundleDir}"
         if [ -n "${bundleFilter}" ]; then
@@ -219,7 +230,7 @@ commitAnyChangesInEffectiveBundles() {
 
 # main
 ACTION="${1:-}"
-echo "Running action '$ACTION'"
+echo "Looking for action '$ACTION'"
 case $ACTION in
     pre-commit)
         processVars

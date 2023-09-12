@@ -3,27 +3,6 @@ removeStrategy:
   rbac: SYNC
   items: NONE
 items:
-- kind: pipeline
-  name: bundle-check
-  concurrentBuild: false
-  definition:
-    cpsFlowDefinition:
-      sandbox: true
-      script: |-
-        @Library('platform-library') _
-        reloadCasCWebhookPipeline(dryRun: false)
-  description: ''
-  disabled: false
-  displayName: bundle-check
-  properties:
-  - buildDiscarder:
-      strategy:
-        logRotator:
-          artifactDaysToKeep: -1
-          artifactNumToKeep: -1
-          daysToKeep: 2
-          numToKeep: 100
-  resumeBlocked: false
 - kind: freeStyle
   name: test-job-from-base-casc-fs
   blockBuildWhenDownstreamBuilding: false
