@@ -1,0 +1,4 @@
+plugins:
+  - id: git
+  - id: jfrog
+  - id: pipeline-model-definition

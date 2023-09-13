@@ -1,0 +1,17 @@
+apiVersion: '1'
+id: 'controller-a'
+description: 'Controller A'
+parent: "bundle-a"
+version: '1'
+availabilityPattern: ".*test"
+jcascMergeStrategy: 'override'
+jcasc:
+  - 'jcasc'
+items:
+  - 'items'
+catalog:
+  - 'catalog'
+plugins:
+  - 'plugins'
+variables:
+  - 'variables'

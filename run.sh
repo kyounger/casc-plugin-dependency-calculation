@@ -11,7 +11,8 @@ INCLUDE_OPTIONAL=0
 DOWNLOAD=0
 VERBOSE_LOG=0
 REFRESH_UC=0
-REFRESH_UC_MINUTES=60
+REFRESH_UC_MINUTES=360 # 6 hours
+SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY="${SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY:-0}"
 MINIMAL_PLUGIN_LIST="${MINIMAL_PLUGIN_LIST:-0}"
 DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
 CI_VERSION=
@@ -43,10 +44,13 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -t          The instance type (oc, oc-traditional, cm, mm)
 
     -F FILE     Final target of the resulting plugins.yaml
-    -c FILE     Final target of the resulting plugin-catalog.yaml
-    -C FILE     Final target of the resulting plugin-catalog-offline.yaml
     -g FILE     Final target of the resulting plugins-minimal-for-generation-only.yaml
     -G FILE     Final target of the resulting plugins-minimal.yaml
+    -c FILE     Final target of the resulting plugin-catalog.yaml
+    -C FILE     Final target of the resulting plugin-catalog-offline.yaml
+
+    -N          Plugin Catalog creation only - [N]o plugin dependency processing
+                    See example 'workflow-generating-effective-bundles' for more detailed usage.
 
     -d          Download plugins to use later (e.g. PFILE in exec hooks)
     -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
@@ -78,15 +82,15 @@ EOF
 }
 
 if [[ ${#} -eq 0 ]]; then
-   show_help
-   exit 0
+    show_help
+    exit 0
 fi
 
 OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts AiIhv:xf:F:g:G:c:C:m:MRsSt:VdD:e: opt; do
+while getopts AiIhv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -124,6 +128,8 @@ while getopts AiIhv:xf:F:g:G:c:C:m:MRsSt:VdD:e: opt; do
         m)  PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
             ;;
         M)  DEDUPLICATE_PLUGINS=1
+            ;;
+        N)  SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY=1
             ;;
         R)  REFRESH_UC=1
             ;;
@@ -867,11 +873,18 @@ hasCustomAnnotation() {
 }
 
 createPluginCatalogAndPluginsYaml() {
-  # process dependencies
-  processAllDeps
+  local pluginListToConsider=
+  if [ "${SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY:-}" -eq 1 ]; then
+    info "ATTENTION: Plugin catalog creation only! Skipping plugin dependency calculation..."
+    pluginListToConsider="${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT}"
+  else
+    # process dependencies
+    processAllDeps
+    pluginListToConsider="${TARGET_PLUGIN_DEPS_PROCESSED}"
+  fi
 
   # get the 3rd party plugins by removing all CAP plugins from list of processed dependencies
-  NON_CAP_PLUGINS=$(comm -23 "${TARGET_PLUGIN_DEPS_PROCESSED}" "${TARGET_ENVELOPE_ALL_CAP}")
+  NON_CAP_PLUGINS=$(comm -23 "${pluginListToConsider}" "${TARGET_ENVELOPE_ALL_CAP}")
 
   export descriptionVer="These are Non-CAP plugins for version $CI_VERSION"
   export productVersion="[$CI_VERSION]"
@@ -959,6 +972,27 @@ createPluginCatalogAndPluginsYaml() {
     addEntrySha256 "$pluginName" "$targetFile"
   done
 
+  # are we currently processing multi-versions?
+  if [ -n "${TMP_PLUGIN_CATALOG:-}" ]; then
+    # shellcheck disable=SC2016
+    tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}")
+    echo "$tmpStr" > "$TMP_PLUGIN_CATALOG"
+    # shellcheck disable=SC2016
+    tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}")
+    echo "$tmpStr" > "$TMP_PLUGIN_CATALOG_OFFLINE"
+    info "Copying temp (collective) plugin catalog files to the target files."
+    cp -v "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}"
+    cp -v "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}"
+  fi
+
+  # final target stuff
+  [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || cp -v "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
+  [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || cp -v "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
+
+  if [ "${SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY:-}" -eq 1 ]; then
+    info "ATTENTION: Plugin catalog creation only finished! Exiting..."
+    return 0
+  fi
 
   #temporarily reformat each file to allow a proper yaml merge
   yq e '.plugins[].id | {.: {}}|... comments=""' "$TARGET_PLUGIN_DEPENDENCY_RESULTS" > "$TARGET_GEN"/temp0.yaml
@@ -1061,19 +1095,6 @@ EOF
     info "CANDIDATES FOR REMOVAL: Congratulations! There are no candidates for potential removal in your plugins list."
   fi
 
-  # are we currently processing multi-versions?
-  if [ -n "${TMP_PLUGIN_CATALOG:-}" ]; then
-    # shellcheck disable=SC2016
-    tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}")
-    echo "$tmpStr" > "$TMP_PLUGIN_CATALOG"
-    # shellcheck disable=SC2016
-    tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}")
-    echo "$tmpStr" > "$TMP_PLUGIN_CATALOG_OFFLINE"
-    info "Copying temp (collective) plugin catalog files to the target files."
-    cp -v "$TMP_PLUGIN_CATALOG" "${TARGET_PLUGIN_CATALOG}"
-    cp -v "$TMP_PLUGIN_CATALOG_OFFLINE" "${TARGET_PLUGIN_CATALOG_OFFLINE}"
-  fi
-
   # let's create a list of ALL EXPECTED PLUGINS found on the controller after startup
   cat \
     "$TARGET_ENVELOPE_BOOTSTRAP" \
@@ -1121,8 +1142,6 @@ EOF
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL"
   [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN"
-  [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || cp -v "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
-  [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || cp -v "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
 
 }
 

@@ -9,3 +9,5 @@ target
 
 # used in the tests
 **/actual/*.yaml
+
+**/effective-bundles
