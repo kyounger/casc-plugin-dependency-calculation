@@ -86,8 +86,6 @@ generate() {
             done
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
-        # recreate effective bundle
-        rm -rf "${targetDir}"
         i=0
         echo "INFO: Creating bundle '$targetDirName' using parents '$BUNDLE_PARENTS'"
         for parent in ${BUNDLE_PARENTS:-}; do
@@ -96,6 +94,13 @@ generate() {
             mkdir -p "${targetDir}"
             for bundleSection in $BUNDLE_SECTIONS; do
                 targetSubDir="${targetDir}/${bundleSection}"
+                # special case for plugin catalog since you can only have one.
+                if [[ "catalog" == "${bundleSection}" ]]; then
+                    debug "  Ignoring plugin catalog files..."
+                    continue
+                fi
+                # recreate effective bundle section directory on first loop
+                [ "$i" -ne 0 ] || rm -rf "${targetSubDir}"
                 mkdir -p "${targetSubDir}"
                 for cascBundleEntry in $(bundleSection=$bundleSection yq '.[env(bundleSection)][]' "${parentBundleYaml}"); do
                     if [ -f "${parentDir}/${cascBundleEntry}" ]; then
@@ -140,7 +145,7 @@ generate() {
                 rm -r "${sectionDir}"
             fi
         done
-        # remove the parent from the effective bundles
+        # add description to the effective bundles
         bp=" (version: $versionDirName, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
         # remove the parent and availabilityPattern from the effective bundles
         yq -i 'del(.parent)|del(.availabilityPattern)' "${targetBundleYaml}"
@@ -174,6 +179,7 @@ replacePluginCatalog() {
     echo "Running... ${DEP_TOOL_CMD[*]}"
     if [ "$DRY_RUN" -eq 0 ]; then
         echo "Removing any previous catalog files..."
+        mkdir -p "${bundleDir}/catalog/"
         rm -f "${bundleDir}/catalog/"*
         "${DEP_TOOL_CMD[@]}"
     else
@@ -236,6 +242,15 @@ case $ACTION in
         processVars
         PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
         $0 generate > "$PRE_COMMIT_LOG" 2>&1
+        # if we:
+        # - ran without recreating the plugin catalogs (DRY_RUN=1)
+        # - find changes to effective plugins directories
+        # then:
+        # - we need to update the plugin catalogs before checking...
+        CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
+        if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
+            die "Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+        fi
         # fail if non-cached diffs found in effective bundles
         [ -z "$(git --no-pager diff --stat "$EFFECTIVE_DIR")" ] || \
             die "Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
