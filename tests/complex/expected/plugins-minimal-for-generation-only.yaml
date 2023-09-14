@@ -19,7 +19,7 @@ plugins:
   - id: ansicolor # 3rd lst src
   - id: artifactory # 3rd lst src
   - id: badge # 3rd lst src
-  - id: blueocean # cap lst cve src
+  - id: blueocean # cap lst src
   - id: build-failure-analyzer # 3rd lst src
   - id: build-monitor-plugin # 3rd lst src
   - id: cloudbees-casc-client # cap lst src
@@ -31,7 +31,7 @@ plugins:
   - id: email-ext # cap lst src
   - id: envinject # 3rd lst src
   - id: gerrit-trigger # 3rd lst src
-  - id: hashicorp-vault-plugin # 3rd lst cve src
+  - id: hashicorp-vault-plugin # 3rd lst src
   - id: ivy # 3rd lst src
   - id: jacoco # cap lst src
   - id: job-dsl # 3rd lst src
@@ -39,7 +39,7 @@ plugins:
   - id: parameterized-trigger # 3rd lst src
   - id: pipeline-maven # 3rd lst src
   - id: pipeline-stage-view # cap lst src
-  - id: pipeline-utility-steps # 3rd lst cve src
+  - id: pipeline-utility-steps # 3rd lst src
   - id: prometheus # 3rd lst src
   - id: robot # 3rd lst src
   - id: saml # cap lst src
