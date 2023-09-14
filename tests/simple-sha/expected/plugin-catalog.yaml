@@ -8,5 +8,5 @@ configurations:
       productVersion: "[2.387.3.5]"
     includePlugins:
       beer:
-        sha256: "d+zYx5gk0d4MPxbY0SX2wA0Wt2TVQ5pfklK0fCVzCak="
         version: "42.v776b_04d96de3"
+        sha256: "d+zYx5gk0d4MPxbY0SX2wA0Wt2TVQ5pfklK0fCVzCak="
