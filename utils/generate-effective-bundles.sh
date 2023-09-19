@@ -248,8 +248,14 @@ case $ACTION in
         # then:
         # - we need to update the plugin catalogs before checking...
         CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
+        CACHED_PLUGINS_FILES=$(git diff --name-only --cached "${EFFECTIVE_DIR}"/**/plugins)
         if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
             die "Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+        elif [ "$DRY_RUN" -ne 0 ] && [ -n "$CACHED_PLUGINS_FILES" ]; then
+            echo ""
+            echo "WARNING >>>> Cached plugin files found! Reminder to please ensure you recreated the plugin catalog using DRY_RUN=0"
+            echo "WARNING >>>> Cached plugin files found! Ignore this if you have recreated the plugin catalog."
+            echo ""
         fi
         # fail if non-cached diffs found in effective bundles
         [ -z "$(git --no-pager diff --stat "$EFFECTIVE_DIR")" ] || \
