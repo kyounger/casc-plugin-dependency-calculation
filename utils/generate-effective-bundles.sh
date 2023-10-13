@@ -4,6 +4,8 @@ set -euo pipefail
 
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
 DRY_RUN="${DRY_RUN:-1}"
+# automatically update catalog if plugin yamls have changed. supercedes DRY_RUN
+AUTO_UPDATE_CATALOG="${AUTO_UPDATE_CATALOG:-0}"
 DEBUG="${DEBUG:-0}"
 TREE_CMD=$(command -v tree || true)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
@@ -93,22 +95,22 @@ generate() {
             parentBundleYaml="${parentDir}/bundle.yaml"
             mkdir -p "${targetDir}"
             for bundleSection in $BUNDLE_SECTIONS; do
-                targetSubDir="${targetDir}/${bundleSection}"
                 # special case for plugin catalog since you can only have one.
                 if [[ "catalog" == "${bundleSection}" ]]; then
                     debug "  Ignoring plugin catalog files..."
                     continue
                 fi
                 # recreate effective bundle section directory on first loop
-                [ "$i" -ne 0 ] || rm -rf "${targetSubDir}"
-                mkdir -p "${targetSubDir}"
+                [ "$i" -ne 0 ] || { rm -rf "${targetDir}/${bundleSection}."*; rm -rf "${targetDir}/${bundleSection:?}"; }
+                bs=$bundleSection yq -i '.[env(bs)] = []' "${targetBundleYaml}"
                 for cascBundleEntry in $(bundleSection=$bundleSection yq '.[env(bundleSection)][]' "${parentBundleYaml}"); do
                     if [ -f "${parentDir}/${cascBundleEntry}" ]; then
                         srcFile="${parentDir}/${cascBundleEntry}"
                         debug "  Found file: ${srcFile}"
-                        targetFileName="${i}.${parent}.${cascBundleEntry}"
+                        targetFileName="${bundleSection}.${i}.${parent}.${cascBundleEntry}"
                         if [ -s "${srcFile}" ]; then
-                            "${COPY_CMD[@]}" "${srcFile}" "${targetSubDir}/${targetFileName}"
+                            "${COPY_CMD[@]}" "${srcFile}" "${targetDir}/${targetFileName}"
+                            bs=$bundleSection f=$targetFileName yq -i '.[env(bs)] += env(f)' "${targetBundleYaml}"
                         else
                             debug "Empty file - ignoring...${srcFile}"
                         fi
@@ -118,10 +120,11 @@ generate() {
                         while IFS= read -r -d '' fullFileName; do
                             fileName=$(basename "$fullFileName")
                             srcFile="${parentDir}/${cascBundleEntry}/$fileName"
-                            targetFileName=$(echo -n "${i}.${parent}.${cascBundleEntry}/$fileName" | tr '/' '.')
+                            targetFileName=$(echo -n "${bundleSection}.${i}.${parent}.${cascBundleEntry}/$fileName" | tr '/' '.')
                             debug "  -> $targetFileName"
                             if [ -s "${srcFile}" ]; then
-                                "${COPY_CMD[@]}" "${srcFile}" "${targetSubDir}/${targetFileName}"
+                                "${COPY_CMD[@]}" "${srcFile}" "${targetDir}/${targetFileName}"
+                                bs=$bundleSection f=$targetFileName yq -i '.[env(bs)] += env(f)' "${targetBundleYaml}"
                             else
                                 debug "Empty file - ignoring... ${srcFile}"
                             fi
@@ -134,17 +137,28 @@ generate() {
             "${COPY_CMD[@]}" "${parentDir}/bundle.yaml" "${targetBundleYaml}"
             i=$(( i + 1 ))
         done
-        replacePluginCatalog "$targetDir" "$versionDirName"
-        # reset sections to directories
+        # reset sections
         for bundleSection in $BUNDLE_SECTIONS; do
-            sectionDir="${targetDir}/${bundleSection}"
-            if [ "$(ls -A "${sectionDir}")" ]; then
-                bs=$bundleSection yq -i '.[env(bs)] = [env(bs)]' "${targetBundleYaml}"
+            # special case for plugin catalog since you can only have one.
+            if [[ "catalog" == "${bundleSection}" ]]; then
+                debug "Ignoring plugin catalog files. Handling afterwards..."
+                continue
+            fi
+            debug "Resetting section ${bundleSection}..."
+            if [ "$(ls -A "${targetDir}/${bundleSection}."* 2> /dev/null)" ]; then
+                bs=$bundleSection yq -i '.[env(bs)] = []' "${targetBundleYaml}"
+                # flatten file stucture
+                local flatFile=''
+                while IFS= read -r f; do
+                    flatFile=$(basename "${f}")
+                    bs=$bundleSection f=$flatFile yq -i '.[env(bs)] += env(f)' "${targetBundleYaml}"
+                done < <(ls -A "${targetDir}/${bundleSection}."*)
             else
                 bs=$bundleSection yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
-                rm -r "${sectionDir}"
             fi
         done
+        # manage plugin catalog
+        replacePluginCatalog "$targetDir" "$versionDirName" "$targetBundleYaml"
         # add description to the effective bundles
         bp=" (version: $versionDirName, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
         # remove the parent and availabilityPattern from the effective bundles
@@ -169,22 +183,63 @@ generate() {
 replacePluginCatalog() {
     local bundleDir=$1
     local ciVersion=$2
+    local targetBundleYaml=$3
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<CI_VERSION>)"
-    finalPluginCatalogYaml="${bundleDir}/catalog/plugin-catalog.yaml"
+    local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
+    finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
+    local checkSumPluginsFilesExpected=''
+    local checkSumPluginsFilesActual=''
     local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
+    local PLUGINS_MD5SUM_CMD=("md5sum")
+    local fName=''
     while IFS= read -r -d '' f; do
+        fName=$(basename "$f")
+        PLUGINS_MD5SUM_CMD+=("$fName")
         DEP_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$bundleDir")
-    DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
-    echo "Running... ${DEP_TOOL_CMD[*]}"
-    if [ "$DRY_RUN" -eq 0 ]; then
+
+    # do we even have plugins files?
+    if [ -z "${PLUGINS_MD5SUM_CMD[*]}" ]; then
+        echo "No plugins yaml files found.}"
         echo "Removing any previous catalog files..."
-        mkdir -p "${bundleDir}/catalog/"
-        rm -f "${bundleDir}/catalog/"*
+        rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
+        bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
+        return 0
+    fi
+
+    DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+    set -x
+    checkSumPluginsFilesExpected=$(cd "${bundleDir}"; "${PLUGINS_MD5SUM_CMD[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f 1)
+    set +x
+    if [ -f "${finalPluginCatalogYaml}" ]; then
+        # check for checksum in catalog
+        checkSumPluginsFilesActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
+    fi
+    # check for AUTO_UPDATE_CATALOG
+    local localDryRun="${DRY_RUN}"
+    echo ""
+    echo "Checking plugin files checksum 'actual: $checkSumPluginsFilesActual' vs 'expected: $checkSumPluginsFilesExpected'"
+    if [ "$checkSumPluginsFilesActual" != "$checkSumPluginsFilesExpected" ]; then
+        if [ "$AUTO_UPDATE_CATALOG" -eq 0 ] && [ "$DRY_RUN" -eq 1 ]; then
+            echo "WARNING: differences in plugins checksum (found in head comment of plugin catalog) found but neither AUTO_UPDATE_CATALOG=1 nor is DRY_RUN=0"
+        else
+            echo "AUTO_UPDATE_CATALOG: differences in plugins found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
+            localDryRun=0
+        fi
+    fi
+    echo ""
+    echo "Running... ${DEP_TOOL_CMD[*]}"
+    if [ "$localDryRun" -eq 0 ]; then
+        echo "Removing any previous catalog files..."
+        rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         "${DEP_TOOL_CMD[@]}"
+        # reset head_comment to new checksum
+        csum="PLUGIN_FILES_CHECKSUM=$checkSumPluginsFilesExpected" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
     else
         echo "Set DRY_RUN=0 to execute."
     fi
+    # set the plugin catalog section
+    bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
 }
 
 ## create plugin commands

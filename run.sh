@@ -289,7 +289,6 @@ createTargetDirs() {
   TARGET_ENVELOPE_BOOTSTRAP="${TARGET_ENVELOPE}.bootstrap.txt"
   TARGET_ENVELOPE_NON_BOOTSTRAP="${TARGET_ENVELOPE}.non-bootstrap.txt"
   TARGET_ENVELOPE_ALL_CAP="${TARGET_ENVELOPE}.all.txt"
-  TARGET_ENVELOPE_ALL_CAP_WITH_VERSION="${TARGET_ENVELOPE}.all-with-version.txt"
   TARGET_PLUGIN_CATALOG="${TARGET_DIR}/plugin-catalog.yaml"
   TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/plugins.yaml"
@@ -480,8 +479,6 @@ copyOrExtractMetaInformation() {
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_NON_BOOTSTRAP}"
   jq -r '.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_ALL_CAP}"
-  jq -r '.plugins[]|"\(.artifactId):\(.version)"' \
-    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_ALL_CAP_WITH_VERSION}"
 
   # create some info lists from the online update-center
   jq -r '.plugins[]|.name' \
@@ -534,7 +531,7 @@ copyOrExtractMetaInformation() {
       TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR["$key"]="${value:=$key}"
   done < "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
 
-  unset TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
+    unset TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
   declare -g -A TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
   while IFS=: read -r key value; do
       TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR["$key"]=$value
@@ -951,7 +948,7 @@ createPluginCatalogAndPluginsYaml() {
     fi
     info "Adding OFFLINE plugin '$pluginName'"
     pluginVersion="${TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR[$pluginName]}"
-    # pluginUrl defaults to the official online url
+        # pluginUrl defaults to the official online url
     local pluginUrlOfficial="${TARGET_UC_ONLINE_ALL_WITH_URL_ARR[$pluginName]}"
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
       pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
@@ -1042,7 +1039,6 @@ Plugin Categories:
  cve - are there open security issues?
  bst - installed by default
  dep - installed as dependency
- lst - installed because it was listed
  src - used as a source plugin for this list
 EOF
 
@@ -1066,7 +1062,6 @@ EOF
     debug "Adding comments for plugin '$p'"
     export pStr=""
     isCapPlugin "$p" && pStr="${pStr} cap" || pStr="${pStr} 3rd"
-    isListed "$p" && pStr="${pStr} lst"
     isBootstrapPlugin "$p" && pStr="${pStr} bst"
     isDependency "$p" && { pStr="${pStr} dep"; ALL_DEPS_ARR["$p"]="$p"; }
     isDeprecatedPlugin "$p" && pStr="${pStr} old"
