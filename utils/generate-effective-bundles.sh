@@ -94,6 +94,7 @@ generate() {
             parentDir="${versionDir}/${parent}"
             parentBundleYaml="${parentDir}/bundle.yaml"
             mkdir -p "${targetDir}"
+            "${COPY_CMD[@]}" "${parentDir}/bundle.yaml" "${targetBundleYaml}"
             for bundleSection in $BUNDLE_SECTIONS; do
                 # special case for plugin catalog since you can only have one.
                 if [[ "catalog" == "${bundleSection}" ]]; then
@@ -134,7 +135,6 @@ generate() {
                     fi
                 done
             done
-            "${COPY_CMD[@]}" "${parentDir}/bundle.yaml" "${targetBundleYaml}"
             i=$(( i + 1 ))
         done
         # reset sections
@@ -199,7 +199,7 @@ replacePluginCatalog() {
     done < <(listPluginYamlsIn "$bundleDir")
 
     # do we even have plugins files?
-    if [ -z "${PLUGINS_MD5SUM_CMD[*]}" ]; then
+    if [ "md5sum" == "${PLUGINS_MD5SUM_CMD[*]}" ]; then
         echo "No plugins yaml files found.}"
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
@@ -208,9 +208,7 @@ replacePluginCatalog() {
     fi
 
     DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
-    set -x
     checkSumPluginsFilesExpected=$(cd "${bundleDir}"; "${PLUGINS_MD5SUM_CMD[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f 1)
-    set +x
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
         checkSumPluginsFilesActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
@@ -238,8 +236,18 @@ replacePluginCatalog() {
     else
         echo "Set DRY_RUN=0 to execute."
     fi
-    # set the plugin catalog section
-    bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
+    # set the plugin catalog section if needed
+    local pluginsInCatalog='0'
+    if [ -f "$pluginsInCatalog" ]; then
+        pluginsInCatalog=$(yq '.configurations[0].includePlugins|length' "${finalPluginCatalogYaml}")
+        if [ "$pluginsInCatalog" -gt 0 ]; then
+            bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
+        else
+            echo "No plugins in catalog. No need to set it in bundle..."
+        fi
+    else
+        echo "No plugin catalog file. No need to set it in bundle..."
+    fi
 }
 
 ## create plugin commands
