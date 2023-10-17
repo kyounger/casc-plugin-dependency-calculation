@@ -531,7 +531,7 @@ copyOrExtractMetaInformation() {
       TARGET_UC_ONLINE_DEPRECATED_PLUGINS_ARR["$key"]="${value:=$key}"
   done < "${TARGET_UC_ONLINE_DEPRECATED_PLUGINS}"
 
-    unset TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
+  unset TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
   declare -g -A TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR
   while IFS=: read -r key value; do
       TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR["$key"]=$value
@@ -948,7 +948,7 @@ createPluginCatalogAndPluginsYaml() {
     fi
     info "Adding OFFLINE plugin '$pluginName'"
     pluginVersion="${TARGET_UC_ONLINE_ALL_WITH_VERSION_ARR[$pluginName]}"
-        # pluginUrl defaults to the official online url
+    # pluginUrl defaults to the official online url
     local pluginUrlOfficial="${TARGET_UC_ONLINE_ALL_WITH_URL_ARR[$pluginName]}"
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
       pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
