@@ -4,14 +4,14 @@ set -euo pipefail
 
 # Initialize our own variables:
 ADD_TS="${ADD_TS:-0}"
-CHECK_CVES=1
+CHECK_CVES="${CHECK_CVES:-0}"
 PLUGIN_SOURCE="${PLUGIN_SOURCE:-all}"
-INCLUDE_BOOTSTRAP=0
-INCLUDE_OPTIONAL=0
-DOWNLOAD=0
-VERBOSE_LOG=0
-REFRESH_UC=0
-REFRESH_UC_MINUTES=360 # 6 hours
+INCLUDE_BOOTSTRAP="${INCLUDE_BOOTSTRAP:-0}"
+INCLUDE_OPTIONAL="${INCLUDE_OPTIONAL:-0}"
+DOWNLOAD="${DOWNLOAD:-0}"
+VERBOSE_LOG="${VERBOSE_LOG:-0}"
+REFRESH_UC="${REFRESH_UC:-0}"
+REFRESH_UC_MINUTES="${REFRESH_UC_MINUTES:-360}" # 6 hours
 SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY="${SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY:-0}"
 MINIMAL_PLUGIN_LIST="${MINIMAL_PLUGIN_LIST:-0}"
 DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
@@ -21,7 +21,7 @@ PLUGIN_YAML_PATHS_FILES=()
 PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
-PLUGIN_YAML_COMMENTS_STYLE=line
+PLUGIN_YAML_COMMENTS_STYLE="${PLUGIN_YAML_COMMENTS_STYLE:-line}"
 CURRENT_DIR=$(pwd)
 TARGET_BASE_DIR="${TARGET_BASE_DIR:="${CURRENT_DIR}/target"}"
 CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
@@ -73,7 +73,7 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
                     defaults to '$PLUGIN_YAML_COMMENTS_STYLE'
     -A          Use 'src' plugins as the source list when calculating dependencies.
     -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
-    -S          Disable CVE check against plugins (added to metadata)
+    -S          Enable CVE check against plugins (added to metadata)
 
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
@@ -137,7 +137,7 @@ while getopts AiIhv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
             ;;
         s)  MINIMAL_PLUGIN_LIST=1
             ;;
-        S)  CHECK_CVES=0
+        S)  CHECK_CVES=1
             ;;
         *)
             show_help >&2
@@ -149,7 +149,7 @@ shift "$((OPTIND-1))"   # Discard the options and sentinel --
 
 # debug
 debug() {
-  [ $VERBOSE_LOG -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $*" 1>&2
+  [ "$VERBOSE_LOG" -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $*" 1>&2
 }
 
 timestampMe() {
@@ -180,7 +180,7 @@ downloadUpdateCenter() {
   local -r UC_FILE=$1
   local -r UC_DIR=$2
   local -r UC_URL=$3
-  if [ "$(find "$UC_FILE" -mmin -"$REFRESH_UC_MINUTES")" ] && [ $REFRESH_UC -eq 0 ]; then
+  if [ "$(find "$UC_FILE" -mmin -"$REFRESH_UC_MINUTES")" ] && [ "$REFRESH_UC" -eq 0 ]; then
     info "$(basename "${UC_FILE}") is less than $REFRESH_UC_MINUTES minutes old. You can remove it or use the '-R' flag to refresh the cache." >&2
     return 1
   else
@@ -195,7 +195,7 @@ cacheUpdateCenter() {
   #download update-center.json file and cache it
   downloadUpdateCenter "$CB_UPDATE_CENTER_CACHE_FILE" "$CB_UPDATE_CENTER_CACHE_DIR" "$CB_UPDATE_CENTER_URL_WITH_VERSION" || true
 
-  [ $CHECK_CVES -eq 1 ] || return 0
+  [ "$CHECK_CVES" -eq 1 ] || return 0
   #download update-center.actual.json file and cache it
   if downloadUpdateCenter "$CB_UPDATE_CENTER_ACTUAL" "$CB_UPDATE_CENTER_ACTUAL_CACHE_DIR" "$JENKINS_UC_ACTUAL_URL"; then
     jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
@@ -641,7 +641,7 @@ isDeprecatedPlugin() {
 }
 
 isNotAffectedByCVE() {
-  if [ $CHECK_CVES -eq 1 ]; then
+  if [ "$CHECK_CVES" -eq 1 ]; then
     # if no CVEs at all for plugin, return 0
     if ! grep -qE "^${1}$" "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"; then
       return 0
@@ -777,7 +777,7 @@ processDeps() {
     debug "${indent}Plugin: $p"
     # bootstrap plugins
     if isBootstrapPlugin "$p"; then
-      if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
+      if [ "$INCLUDE_BOOTSTRAP" -eq 1 ]; then
         debug "${indent}Result - add bootstrap: $p"
         TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
       else
@@ -831,7 +831,7 @@ processAllDeps() {
   declare -g -A TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR
 
   # optional deps?
-  [ $INCLUDE_OPTIONAL -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
+  [ "$INCLUDE_OPTIONAL" -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
 
   # process deps
   local p=
@@ -959,7 +959,7 @@ createPluginCatalogAndPluginsYaml() {
     # if the plugins were downloaded, copy and create an offline plugin catalog
     # TODO - do we want to support downloading custom plugins? It would get even messier than now.
     pluginDest=
-    if [ $DOWNLOAD -eq 1 ]; then
+    if [ "$DOWNLOAD" -eq 1 ]; then
       pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginUrlOfficial//*\//}"
       # Copy to cache...
       mkdir -p "$(dirname "${pluginDest}")"
