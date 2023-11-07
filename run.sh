@@ -843,11 +843,21 @@ processAllDeps() {
     processDeps "$p"
   done
   # sort processed into files for later
-  printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED}"
-  printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
-  echo "plugins:" > "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-  printf "  - id: %s\n" "${!TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR[@]}" | sort >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
-  # yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  touch \
+    "${TARGET_PLUGIN_DEPS_PROCESSED}" \
+    "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}" \
+    "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  if [ "${TARGET_PLUGIN_DEPS_PROCESSED_ARR[*]}" ]; then
+    printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED}"
+  fi
+  if [ -n "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[*]}" ]; then
+    printf "%s\n" "${!TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[@]}" | sort > "${TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL}"
+  fi
+  if [ -n "${TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR[*]}" ]; then
+    echo "plugins:" > "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+    printf "  - id: %s\n" "${!TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR[@]}" | sort >> "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+    # yq -i '.plugins|=sort_by(.id)|... comments=""' "${TARGET_PLUGIN_DEPENDENCY_RESULTS}"
+  fi
 
   info "Processing dependency tree..."
   unset TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR
@@ -860,6 +870,8 @@ processAllDeps() {
       echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]}" >> "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
     fi
   done
+  # create if needed
+  touch "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
   sort -o "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
 }
 

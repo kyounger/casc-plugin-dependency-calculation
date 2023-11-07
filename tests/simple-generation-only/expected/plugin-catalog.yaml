@@ -32,4 +32,4 @@ configurations:
       beer:
         version: "42.v776b_04d96de3"
       ec2-fleet:
-        version: "3.0.0"
+        version: "3.1.0"

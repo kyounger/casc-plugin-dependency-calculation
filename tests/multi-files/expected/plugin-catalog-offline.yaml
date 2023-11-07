@@ -18,4 +18,4 @@ configurations:
       beer:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/beer/42.v776b_04d96de3/beer.hpi"
       job-dsl:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/job-dsl/1.85/job-dsl.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/job-dsl/1.87/job-dsl.hpi"
