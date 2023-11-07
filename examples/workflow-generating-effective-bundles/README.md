@@ -112,7 +112,7 @@ Taking a closer look at one of the `plugins.yaml` we see the file has been sanit
 > #  cve - are there open security issues?
 > #  bst - installed by default
 > #  dep - installed as dependency
-> > #  src - used as a source plugin for this list
+> #  src - used as a source plugin for this list
 >
 2,4c19,21
 <   - id: git
@@ -297,7 +297,7 @@ Sometimes a child bundle may need to use a different version of a custom plugin.
 raw-bundles/2.401.1.3/controller-a/plugins/plugins.yaml:  # tag:custom:url=https://acme.org/artifactory/some-custom-plugin/2.0/some-custom-plugin-2.0.hpi
 raw-bundles/2.401.1.3/controller-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd src
 raw-bundles/2.401.1.3/bundle-a/plugins/plugins.yaml:  # tag:custom:url=https://acme.org/artifactory/some-custom-plugin/1.0/some-custom-plugin-1.0.hpi
-raw-bundles/2.401.1.3/bundle-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd $
+raw-bundles/2.401.1.3/bundle-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd
 ```
 
 The resulting dedicated plugin catalog after generating the effective bundle contains the version `2.0`:

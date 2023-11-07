@@ -176,9 +176,9 @@ Comments are placed behind the plugin.
 
 ```yaml
 plugins:
-  - id: code-coverage-api # 3rd $
+  - id: code-coverage-api # 3rd
   - id: commons-lang3-api # cap dep
-  - id: ec2 # cap $
+  - id: ec2 # cap
   - id: hashicorp-vault-plugin # 3rd cve
 ```
 
