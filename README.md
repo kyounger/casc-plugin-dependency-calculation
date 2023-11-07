@@ -79,9 +79,9 @@ A recent version of the `aws-java-sdk` plugin added the `aws-java-sdk-kinesis` p
 ```yaml
 plugins:
 ...
-- id: aws-java-sdk # 3rd lst dep src min
-- id: aws-java-sdk-kinesis # 3rd lst dep src min
-- id: ec2-fleet # 3rd lst src min gen
+- id: aws-java-sdk # 3rd dep src min
+- id: aws-java-sdk-kinesis # 3rd dep src min
+- id: ec2-fleet # 3rd src min
 ```
 
 This new `aws-java-sdk-kinesis` plugin is not available in older update centers meaning the catalog generation would fail for older versions of CI.
@@ -166,10 +166,8 @@ The file now comes with a header describing the categories.
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 #  min - is part of the viable 'minimal' set of plugins
-#  gen - is part of the non-viable 'generation-only' set of plugins
 ```
 
 ### Comment style - `line`
@@ -178,10 +176,10 @@ Comments are placed behind the plugin.
 
 ```yaml
 plugins:
-  - id: code-coverage-api # 3rd lst
+  - id: code-coverage-api # 3rd $
   - id: commons-lang3-api # cap dep
-  - id: ec2 # cap lst
-  - id: hashicorp-vault-plugin # 3rd lst cve
+  - id: ec2 # cap $
+  - id: hashicorp-vault-plugin # 3rd cve
 ```
 
 ## Unnecessary Plugins Check

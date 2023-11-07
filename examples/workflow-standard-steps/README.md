@@ -92,7 +92,7 @@ Before:
 
 ```yaml
 plugins:
-  - id: aws-credentials # cap lst dep
+  - id: aws-credentials # cap dep
 ```
 
 After (comment is optional):
@@ -100,7 +100,7 @@ After (comment is optional):
 ```yaml
 plugins:
   # we want to keep this plugin regardless - src added manually
-  - id: aws-credentials # cap lst dep src
+  - id: aws-credentials # cap dep src
 ```
 
 The resulting starter file can be found at `examples/workflow-standard-steps/files/plugins-starter.yaml`
@@ -244,7 +244,7 @@ diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5
 >         version: "71.vc1421f89888e"
 diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5/plugins.yaml examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5-add/plugins.yaml
 32a33,34
->   - id: basic-branch-build-strategies # 3rd lst src
+>   - id: basic-branch-build-strategies # 3rd src
 >   - id: branch-api # cap dep
 ```
 
@@ -269,8 +269,8 @@ diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.414.1.4
 >         version: "81.v05e333931c7d"
 diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.414.1.4/plugins.yaml examples/workflow-standard-steps/files/bundles/bundle-v2.414.1.4-add/plugins.yaml
 33a34,35
->   - id: basic-branch-build-strategies # 3rd lst src
->   - id: branch-api # cap lst dep
+>   - id: basic-branch-build-strategies # 3rd src
+>   - id: branch-api # cap dep
 ```
 
 ### Removing a plugin
@@ -282,7 +282,7 @@ Consider we want to now remove the `basic-branch-build-strategies` plugin. We ca
 ```sh
 ❯ diff -r examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5-add/plugins.yaml examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5-remove/plugins.yaml
 33d32
-<   - id: basic-branch-build-strategies # 3rd lst src
+<   - id: basic-branch-build-strategies # 3rd src
 ```
 
 Then recreate the necessary files using the now edited file:
@@ -306,6 +306,6 @@ diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5
 <         version: "71.vc1421f89888e"
 diff --color -r examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5-add/plugins.yaml examples/workflow-standard-steps/files/bundles/bundle-v2.387.3.5-remove/plugins.yaml
 33,34d32
-<   - id: basic-branch-build-strategies # 3rd lst src
+<   - id: basic-branch-build-strategies # 3rd src
 <   - id: branch-api # cap dep
 ```

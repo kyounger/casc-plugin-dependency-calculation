@@ -12,41 +12,40 @@
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 
 plugins:
-  - id: ansicolor # 3rd lst src
-  - id: artifactory # 3rd lst src
-  - id: badge # 3rd lst src
-  - id: blueocean # cap lst src
-  - id: build-failure-analyzer # 3rd lst src
-  - id: build-monitor-plugin # 3rd lst src
-  - id: cloudbees-casc-client # cap lst src
-  - id: cloudbees-casc-items-controller # cap lst src
-  - id: cloudbees-quiet-start # cap lst src
-  - id: cobertura # 3rd lst src
-  - id: configuration-as-code-groovy # 3rd lst src
-  - id: ec2-fleet # 3rd lst src
-  - id: email-ext # cap lst src
-  - id: envinject # 3rd lst src
-  - id: gerrit-trigger # 3rd lst src
-  - id: hashicorp-vault-plugin # 3rd lst src
-  - id: ivy # 3rd lst src
-  - id: jacoco # cap lst src
-  - id: job-dsl # 3rd lst src
-  - id: parameterized-scheduler # 3rd lst src
-  - id: parameterized-trigger # 3rd lst src
-  - id: pipeline-maven # 3rd lst src
-  - id: pipeline-stage-view # cap lst src
-  - id: pipeline-utility-steps # 3rd lst src
-  - id: prometheus # 3rd lst src
-  - id: robot # 3rd lst src
-  - id: saml # cap lst src
-  - id: slack # 3rd lst src
-  - id: ssh-agent # cap lst src
-  - id: swarm # 3rd lst src
-  - id: throttle-concurrents # 3rd lst src
-  - id: timestamper # cap lst src
-  - id: uno-choice # 3rd lst src
-  - id: ws-cleanup # 3rd lst src
+  - id: ansicolor # 3rd src
+  - id: artifactory # 3rd src
+  - id: badge # 3rd src
+  - id: blueocean # cap src
+  - id: build-failure-analyzer # 3rd src
+  - id: build-monitor-plugin # 3rd src
+  - id: cloudbees-casc-client # cap src
+  - id: cloudbees-casc-items-controller # cap src
+  - id: cloudbees-quiet-start # cap src
+  - id: cobertura # 3rd src
+  - id: configuration-as-code-groovy # 3rd src
+  - id: ec2-fleet # 3rd src
+  - id: email-ext # cap src
+  - id: envinject # 3rd src
+  - id: gerrit-trigger # 3rd src
+  - id: hashicorp-vault-plugin # 3rd src
+  - id: ivy # 3rd src
+  - id: jacoco # cap src
+  - id: job-dsl # 3rd src
+  - id: parameterized-scheduler # 3rd src
+  - id: parameterized-trigger # 3rd src
+  - id: pipeline-maven # 3rd src
+  - id: pipeline-stage-view # cap src
+  - id: pipeline-utility-steps # 3rd src
+  - id: prometheus # 3rd src
+  - id: robot # 3rd src
+  - id: saml # cap src
+  - id: slack # 3rd src
+  - id: ssh-agent # cap src
+  - id: swarm # 3rd src
+  - id: throttle-concurrents # 3rd src
+  - id: timestamper # cap src
+  - id: uno-choice # 3rd src
+  - id: ws-cleanup # 3rd src

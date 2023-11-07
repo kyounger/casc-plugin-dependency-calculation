@@ -12,10 +12,9 @@
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 
 plugins:
-  - id: git # cap lst dep
-  - id: jfrog # 3rd lst src
-  - id: pipeline-model-definition # cap lst dep
+  - id: git # cap dep
+  - id: jfrog # 3rd src
+  - id: pipeline-model-definition # cap dep

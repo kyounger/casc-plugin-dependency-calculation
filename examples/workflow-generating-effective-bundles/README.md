@@ -112,17 +112,16 @@ Taking a closer look at one of the `plugins.yaml` we see the file has been sanit
 > #  cve - are there open security issues?
 > #  bst - installed by default
 > #  dep - installed as dependency
-> #  lst - installed because it was listed
-> #  src - used as a source plugin for this list
+> > #  src - used as a source plugin for this list
 >
 2,4c19,21
 <   - id: git
 <   - id: jfrog
 <   - id: pipeline-model-definition
 ---
->   - id: git # cap lst dep
->   - id: jfrog # 3rd lst src
->   - id: pipeline-model-definition # cap lst dep
+>   - id: git # cap dep
+>   - id: jfrog # 3rd src
+>   - id: pipeline-model-definition # cap dep
 ```
 
 ### Steps
@@ -296,9 +295,9 @@ Sometimes a child bundle may need to use a different version of a custom plugin.
 ```sh
 ❯ grep -r custom-plugin raw-bundles
 raw-bundles/2.401.1.3/controller-a/plugins/plugins.yaml:  # tag:custom:url=https://acme.org/artifactory/some-custom-plugin/2.0/some-custom-plugin-2.0.hpi
-raw-bundles/2.401.1.3/controller-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd lst src
+raw-bundles/2.401.1.3/controller-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd src
 raw-bundles/2.401.1.3/bundle-a/plugins/plugins.yaml:  # tag:custom:url=https://acme.org/artifactory/some-custom-plugin/1.0/some-custom-plugin-1.0.hpi
-raw-bundles/2.401.1.3/bundle-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd lst
+raw-bundles/2.401.1.3/bundle-a/plugins/plugins.yaml:  - id: some-custom-plugin # 3rd $
 ```
 
 The resulting dedicated plugin catalog after generating the effective bundle contains the version `2.0`:

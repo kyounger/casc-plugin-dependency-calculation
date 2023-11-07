@@ -12,17 +12,16 @@
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 
 plugins:
-  - id: cloudbees-casc-client # cap lst src
-  - id: cloudbees-casc-items-controller # cap lst src
-  - id: cloudbees-prometheus # 3rd lst src
-  - id: configuration-as-code # cap lst src
-  - id: github # cap lst src
-  - id: infradna-backup # cap lst src
-  - id: managed-master-hibernation # cap lst src
-  - id: pipeline-model-definition # cap lst src
-  - id: pipeline-stage-view # cap lst src
-  - id: sshd # cap lst src
+  - id: cloudbees-casc-client # cap src
+  - id: cloudbees-casc-items-controller # cap src
+  - id: cloudbees-prometheus # 3rd src
+  - id: configuration-as-code # cap src
+  - id: github # cap src
+  - id: infradna-backup # cap src
+  - id: managed-master-hibernation # cap src
+  - id: pipeline-model-definition # cap src
+  - id: pipeline-stage-view # cap src
+  - id: sshd # cap src

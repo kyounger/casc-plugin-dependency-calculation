@@ -12,9 +12,8 @@
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 
 plugins:
-  - id: branch-api # cap lst dep
-  - id: job-dsl # 3rd lst src
+  - id: branch-api # cap dep
+  - id: job-dsl # 3rd src

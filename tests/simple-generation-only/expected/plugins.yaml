@@ -12,7 +12,6 @@
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 
 plugins:
@@ -31,6 +30,6 @@ plugins:
   - id: aws-java-sdk-sns # 3rd dep
   - id: aws-java-sdk-sqs # 3rd dep
   - id: aws-java-sdk-ssm # 3rd dep
-  - id: beer # 3rd lst src
-  - id: ec2-fleet # 3rd lst src
+  - id: beer # 3rd src
+  - id: ec2-fleet # 3rd src
   - id: ssh-slaves # cap dep

@@ -1067,7 +1067,7 @@ EOF
     isDeprecatedPlugin "$p" && pStr="${pStr} old"
     isNotAffectedByCVE "$p" || pStr="${pStr} cve"
     needsSourceTag "$p" && pStr="${pStr} src"
-    if [[ "$pStr" =~ cap\ lst.*dep ]] && isCandidateForRemoval "$p"; then
+    if [[ "$pStr" =~ cap\ .*dep ]] && isCandidateForRemoval "$p"; then
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
     elif [[ "$pStr" =~ bst ]]; then
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
