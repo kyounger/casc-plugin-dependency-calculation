@@ -18,4 +18,4 @@ configurations:
       beer:
         version: "42.v776b_04d96de3"
       job-dsl:
-        version: "1.85"
+        version: "1.87"
