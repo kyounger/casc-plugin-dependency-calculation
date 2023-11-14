@@ -96,48 +96,69 @@ while getopts AiIhv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
             show_help
             exit 0
             ;;
-        v)  CI_VERSION=$OPTARG
+        v)
+            CI_VERSION=$OPTARG
             ;;
-        t)  CI_TYPE=$OPTARG
+        t)
+            CI_TYPE=$OPTARG
             ;;
-        V)  VERBOSE_LOG=1
+        V)
+            VERBOSE_LOG=1
             ;;
-        d)  DOWNLOAD=1
+        d)
+            DOWNLOAD=1
             ;;
-        D)  PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
+        D)
+            PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
             ;;
-        e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
+        e)
+            PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
-        f)  PLUGIN_YAML_PATHS_FILES["$PLUGIN_YAML_PATHS_IDX"]=$OPTARG
+        f)
+            PLUGIN_YAML_PATHS_FILES["$PLUGIN_YAML_PATHS_IDX"]=$OPTARG
             PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
-        F)  FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
+        F)
+            FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
             ;;
-        g)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN=$OPTARG
+        g)
+            FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN=$OPTARG
             ;;
-        G)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL=$OPTARG
+        G)
+            FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL=$OPTARG
             ;;
-        c)  FINAL_TARGET_PLUGIN_CATALOG=$OPTARG
+        c)
+            FINAL_TARGET_PLUGIN_CATALOG=$OPTARG
             ;;
-        C)  FINAL_TARGET_PLUGIN_CATALOG_OFFLINE=$OPTARG
+        C)
+            FINAL_TARGET_PLUGIN_CATALOG_OFFLINE=$OPTARG
             ;;
-        i)  INCLUDE_OPTIONAL=1
+        i)
+            INCLUDE_OPTIONAL=1
             ;;
-        I)  INCLUDE_BOOTSTRAP=1
+        I)
+            INCLUDE_BOOTSTRAP=1
             ;;
-        m)  PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
+        m)
+            PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
             ;;
-        M)  DEDUPLICATE_PLUGINS=1
+        M)
+            DEDUPLICATE_PLUGINS=1
             ;;
-        N)  SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY=1
+        N)
+            SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY=1
             ;;
-        R)  REFRESH_UC=1
+        R)
+            REFRESH_UC=1
             ;;
-        A)  PLUGIN_SOURCE=src
+        A)
+            PLUGIN_SOURCE=src
             ;;
-        s)  MINIMAL_PLUGIN_LIST=1
+        s)
+            MINIMAL_PLUGIN_LIST=1
             ;;
-        S)  CHECK_CVES=1
+        S)
+            CHECK_CVES=1
             ;;
         *)
             show_help >&2

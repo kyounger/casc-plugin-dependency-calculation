@@ -10,13 +10,19 @@ DEBUG="${DEBUG:-0}"
 TREE_CMD=$(command -v tree || true)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
+
 # assuming some variables - can be overwritten
-DEP_TOOL="${DEP_TOOL:-"$PARENT_DIR/run.sh"}"
 EFFECTIVE_DIR="${EFFECTIVE_DIR:-"${PWD}/effective-bundles"}"
 RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
-export TARGET_BASE_DIR='' CACHE_BASE_DIR=''
-TARGET_BASE_DIR="${TARGET_BASE_DIR:-"$(dirname "$DEP_TOOL")/target"}"
-CACHE_BASE_DIR="${CACHE_BASE_DIR:-"$(dirname "$DEP_TOOL")/.cache"}"
+export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${PWD}/target"}"
+export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
+
+# find the DEP_TOOL location (found as cascdeps in the docker image)
+if command -v cascdeps &> /dev/null; then
+    DEP_TOOL=$(command -v cascdeps)
+elif [ -z "${DEP_TOOL:-}" ]; then
+    DEP_TOOL="${PARENT_DIR}/run.sh"
+fi
 
 die() { echo "$*"; exit 1; }
 
@@ -238,7 +244,7 @@ replacePluginCatalog() {
     fi
     # set the plugin catalog section if needed
     local pluginsInCatalog='0'
-    if [ -f "$pluginsInCatalog" ]; then
+    if [ -f "$finalPluginCatalogYaml" ]; then
         pluginsInCatalog=$(yq '.configurations[0].includePlugins|length' "${finalPluginCatalogYaml}")
         if [ "$pluginsInCatalog" -gt 0 ]; then
             bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
@@ -274,7 +280,7 @@ pluginCommands() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         while IFS= read -r -d '' f; do
-            local DEP_TOOL_CMD=("$DEP_TOOL" -v "$versionDirName" -s -f "$f" -G "$f")
+            local DEP_TOOL_CMD=("$DEP_TOOL" -v "$versionDirName" -sAf "$f" -G "$f")
             echo "Running... ${DEP_TOOL_CMD[*]}"
             if [ "$DRY_RUN" -eq 0 ]; then
                 "${DEP_TOOL_CMD[@]}"

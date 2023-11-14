@@ -10,7 +10,7 @@ function die() {
 function errorMe() {
   cat <<< "ERROR: $*" 1>&2
 }
-export -f die
+export -f die errorMe
 
 # tool vars
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
