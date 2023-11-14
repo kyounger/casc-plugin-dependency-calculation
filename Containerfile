@@ -5,7 +5,6 @@ COPY run.sh /usr/local/bin/cascdeps
 COPY utils/generate-effective-bundles.sh /usr/local/bin/cascgen
 
 RUN useradd casc-user -ms /bin/bash
-USER casc-user
 WORKDIR /home/casc-user
 ENV CACHE_DIR=/tmp/pimt-cache \
     CACHE_BASE_DIR=/tmp/casc-plugin-dependency-calculation-cache \
