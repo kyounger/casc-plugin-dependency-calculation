@@ -2,12 +2,14 @@
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-## Intro
+## Contents
 
 - [Intro](#intro)
+  - [General Features](#general-features)
 - [:information_source: Removal of plugin-installation-manager-tool dependency](#information_source-removal-of-plugin-installation-manager-tool-dependency)
 - [Source Plugin Management](#source-plugin-management)
-- [New Features](#new-features)
+  - [The `src` tag explained](#the-src-tag-explained)
+  - [Support for Custom Plugins](#support-for-custom-plugins)
   - [Minimal and Generation-Only Plugins](#minimal-and-generation-only-plugins)
   - [Generation-Only Use Case](#generation-only-use-case)
 - [Requirements](#requirements)
@@ -23,14 +25,30 @@
 - [TODO](#todo)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Intro
 
 Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (any tier), and it will:
 
-1. Generate the `plugin-catalog.yaml` file for you in the same directory, including all versions and transitive dependencies.
-2. Update the `plugins.yaml` file you originally specifed with the additional transitive dependencies.
+1. Generate the `plugin-catalog.yaml` file for you including all versions and transitive dependencies.
+2. Generate variations of the `plugins.yaml` file you originally specifed with any additional transitive dependencies.
+3. Allow you to specify where you want the resulting files to go.
 
 This means that as long as you are willing to use the plugin versions in the CloudBees Update Centers (which you should be doing), then all you ever need to do is add plugins to the `plugins.yaml` file and this script will handle the rest. No more manually crafting plugin catalogs!
+
+### General Features
+
+- **minimal plugin list** - create a minimal viable list of plugins based on a starting list. See `-s` for more details.
+- **multiple CBCI versions** - create a master plugin catalog for multiple CBCI versions
+- **multiple source files** - create a master plugin catalog from multiple source files
+- **metadata** - option to include metadata as a comment in the `plugins.yaml`
+- **final target locations** - option to set specific target locations for final files
+- **bootstrap or optional plugins** - improved plugin dependency management for more accurate `plugins.yaml`
+  - include optional dependencies per flag
+  - include bootstrap dependencies per flag
+- **exec hooks** - ability to run `exec-hooks` for plugin post-processing
+  - ability to create air-gapped `plugin-catalog-offline.yaml` files
+- **simple cache** - rudimentary plugin-cache for holding plugins without an artifact repository manager
 
 ## :information_source: Removal of plugin-installation-manager-tool dependency
 
@@ -45,19 +63,13 @@ Removal of this dependency results in:
 
 A better way of managing plugin lists has been added. See the [Standard Workflow](examples/workflow-standard-steps/README.md) for more details
 
-## New Features
+### The `src` tag explained
 
-- **minimal plugin list** - create a minimal viable list of plugins based on a starting list. See `-s` for more details.
-- **multiple CBCI versions** - create a master plugin catalog for multiple CBCI versions
-- **multiple source files** - create a master plugin catalog from multiple source files
-- **metadata** - option to include metadata as a comment in the `plugins.yaml`
-- **final target locations** - option to set specific target locations for final files
-- **bootstrap or optional plugins** - improved plugin dependency management for more accurate `plugins.yaml`
-  - include optional dependencies per flag
-  - include bootstrap dependencies per flag
-- **exec hooks** - ability to run `exec-hooks` for plugin post-processing
-  - ability to create air-gapped `plugin-catalog-offline.yaml` files
-- **simple cache** - rudimentary plugin-cache for holding plugins without an artifact repository manager
+More information on [the src tag](./examples/the-src-tag/README.md).
+
+### Support for Custom Plugins
+
+See the information for [custom plugins tags](./examples/custom-plugins-tags/README.md).
 
 ### Minimal and Generation-Only Plugins
 
@@ -91,7 +103,6 @@ Using the `-A` will create the plugin catalog using `ec2-fleet` only, thus creat
 Further examples will be added to the examples folder at a later date.
 ## Requirements
 
-- docker (only for the v0.x branch)
 - jq
 - yq (v4)
 - curl
@@ -167,7 +178,7 @@ The file now comes with a header describing the categories.
 #  bst - installed by default
 #  dep - installed as dependency
 #  src - used as a source plugin for this list
-#  min - is part of the viable 'minimal' set of plugins
+plugins
 ```
 
 ### Comment style - `line`

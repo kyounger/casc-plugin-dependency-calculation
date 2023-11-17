@@ -244,6 +244,8 @@ setScriptVars() {
   #adjustable vars. Will inherit from shell, but default to what you see here.
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
   PLUGIN_CATALOG_OFFLINE_URL_BASE="${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}"
+  PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT='https://jenkins-updates.cloudbees.com/download/plugins/PNAME/PVERSION/PNAME.hpi'
+
   #calculated vars
   CB_UPDATE_CENTER_URL_WITH_VERSION="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
@@ -451,7 +453,7 @@ copyOrExtractMetaInformation() {
   # let's create the source list yaml
   cp "$TARGET_PLUGINS_YAML_ORIG" "$TARGET_PLUGINS_SOURCED_YAML"
   for p in $(yq '.plugins[].id ' "$TARGET_PLUGINS_SOURCED_YAML" | xargs); do
-    [[ -n "${PLUGIN_SOURCE_ARR[$p]-}" ]] || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
+    isSourced "$p" || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
   done
   yq '.plugins[].id' "${TARGET_PLUGINS_SOURCED_YAML}" | sort > "${TARGET_PLUGINS_SOURCED_YAML_TXT}"
   # are we going to be auto-tagging src plugins?
@@ -471,8 +473,8 @@ copyOrExtractMetaInformation() {
   local missingRequirements=
   for p in "${!ANNOTATION_CUSTOM_REQUIRES_PREFIX_ARR[@]}"; do
     for req in ${ANNOTATION_CUSTOM_REQUIRES_PREFIX_ARR[$p]}; do
-      if ! isListed "$req"; then
-        warn "Missing custom requirement '$req' (required by '$p')"
+      if ! isSourced "$req"; then
+        warn "Missing custom requirement '$req' (required by '$p'). Please add the 'src' to ensure it is included."
         missingRequirements=1
       fi
     done
@@ -647,6 +649,10 @@ isCapPlugin() {
 
 isListed() {
   [[ -n "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR[$1]-}" ]]
+}
+
+isSourced() {
+  [[ -n "${PLUGIN_SOURCE_ARR[$1]-}" ]]
 }
 
 needsSourceTag() {
@@ -925,13 +931,17 @@ createPluginCatalogAndPluginsYaml() {
   # Add the custom plugins first
   local customVersion customUrl
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
-    # accounting for custom plugins
-    customVersion="${ANNOTATION_CUSTOM_VERSION_PREFIX_ARR[$pluginName]-}"
-    customUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$pluginName]-}"
-    if [ -n "$customVersion" ]; then
-      addEntry "$pluginName" "version" "$customVersion" "$targetFile"
-    elif [ -n "$customUrl" ]; then
-      addEntry "$pluginName" "url" "$customUrl" "$targetFile"
+    if isSourced "$pluginName"; then
+      # accounting for custom plugins
+      customVersion="${ANNOTATION_CUSTOM_VERSION_PREFIX_ARR[$pluginName]-}"
+      customUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$pluginName]-}"
+      if [ -n "$customVersion" ]; then
+        addEntry "$pluginName" "version" "$customVersion" "$targetFile"
+      elif [ -n "$customUrl" ]; then
+        addEntry "$pluginName" "url" "$customUrl" "$targetFile"
+      fi
+    else
+      warn "Found plugin '${pluginName}' with custom annotation but no 'src' tag."
     fi
   done
   # Now the other non-cap plugins
@@ -957,8 +967,14 @@ createPluginCatalogAndPluginsYaml() {
     if [ -n "$customUrl" ]; then
       addEntry "$pluginName" "url" "$customUrl" "$targetFile"
     else
-      warn "Custom plugin found without a custom url. Falling back to PLUGIN_CATALOG_OFFLINE_URL_BASE"
-      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+      warn "Custom plugin found without a custom url."
+      if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
+        warn "Using provided PLUGIN_CATALOG_OFFLINE_URL_BASE"
+        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+      else
+        warn "No PLUGIN_CATALOG_OFFLINE_URL_BASE provided. Using one based on the UC url (PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT)."
+        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+      fi
       addEntry "$pluginName" "url" "$pluginUrl" "$targetFile"
     fi
   done
