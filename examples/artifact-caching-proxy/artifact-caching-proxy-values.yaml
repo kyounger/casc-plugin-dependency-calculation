@@ -1,0 +1,26 @@
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+# Datadog Integration
+datadog:
+  metricsCollection:
+    enabled: false
+  logCollection:
+    enabled: false
+cache:
+  # http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_path
+  path: /data/nginx-cache
+  keysZoneSize: "200m"
+  inactive: "1M"
+  useTempPath: "off"
+proxy:
+  proxyPass: "jenkins-updates.cloudbees.com"
+  proxyCacheValidCode: "200 206"
+  proxyCacheValidCodeDuration: "1M"
+  # http://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_bypass
+  proxyBypass:
+    enabled: true
