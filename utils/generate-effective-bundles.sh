@@ -17,6 +17,13 @@ RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
 export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${PWD}/target"}"
 export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
 
+# CI_VERSION env var set, no detection necessary. Otherwise,
+# version detection (detected in the following order):
+# - name of parent directory of RAW_DIR
+# - name of current git branch (if git on PATH)
+CI_DETECTION_PATTERN="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
+CI_TEST_PATTERN="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]"
+
 # find the DEP_TOOL location (found as cascdeps in the docker image)
 if command -v cascdeps &> /dev/null; then
     DEP_TOOL=$(command -v cascdeps)
@@ -28,6 +35,36 @@ die() { echo "$*"; exit 1; }
 
 debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
 
+determineCIVersion() {
+    # determine CI_VERSION
+    if [ -z "${CI_VERSION:-}" ]; then
+        local versionDir='' versionDirName=''
+        versionDir=$(dirname "$RAW_DIR")
+        versionDirName=$(basename "$versionDir")
+        # test parent dir
+        if [[ "$versionDirName" =~ $CI_DETECTION_PATTERN ]]; then
+            echo "INFO: Setting CI_VERSION according to parent of RAW_DIR."
+            CI_VERSION="${BASH_REMATCH[1]}"
+        elif [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
+            echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
+            CI_VERSION="${BASH_REMATCH[1]}"
+        elif command -v git &> /dev/null; then
+            local gitBranch=''
+            gitBranch=$(git rev-parse --abbrev-ref HEAD)
+            if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
+                echo "INFO: Setting CI_VERSION according to git branch from command."
+                CI_VERSION="${BASH_REMATCH[1]}"
+            else
+                # we've got this without being able to find the CI_VERSION so...
+                die "Could not determine a CI_VERSION. Checked env var, RAW_DIR's parent dir, GIT_BRANCH env var, and git branch."
+            fi
+        fi
+    else
+        echo "INFO: Setting CI_VERSION according to CI_VERSION env var."
+    fi
+    [[ "$CI_VERSION" =~ $CI_TEST_PATTERN ]] || die "CI_VERSION '${CI_VERSION}' is not a valid version."
+}
+
 processVars() {
     echo "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
@@ -35,12 +72,14 @@ processVars() {
     [ -x "${DEP_TOOL}" ] || die "DEP_TOOL is not executable"
     [ -d "${RAW_DIR}" ] || die "RAW_DIR is not a directory"
     [ -d "${EFFECTIVE_DIR}" ] || die "EFFECTIVE_DIR is not a directory"
+    determineCIVersion
     echo "Running with:
     DEP_TOOL=$DEP_TOOL
     TARGET_BASE_DIR=$TARGET_BASE_DIR
     CACHE_BASE_DIR=$CACHE_BASE_DIR
     RAW_DIR=$RAW_DIR
-    EFFECTIVE_DIR=$EFFECTIVE_DIR"
+    EFFECTIVE_DIR=$EFFECTIVE_DIR
+    CI_VERSION=$CI_VERSION"
 }
 
 listFileXInY() {
@@ -48,7 +87,10 @@ listFileXInY() {
 }
 
 listBundleYamlsIn() {
-    listFileXInY "$1" "bundle.yaml"
+    # allow using something like raw.bundle.yaml instead of bundle.yaml for the raw bundles
+    # - this is because the current OC does not allow setting a path to the bundles location entry :-(
+    # - being able to set a path would make this whole raw.bundle.yaml thing reduntant, but heyho...
+    listFileXInY "$1" "*bundle.yaml"
 }
 
 listPluginYamlsIn() {
@@ -60,31 +102,24 @@ listPluginCatalogsIn() {
 }
 
 findBundleChain() {
-    local bundleYaml="${1}/bundle.yaml"
-    local currentParent=''
-    currentParent=$(grep -oE "^parent: .*$" "$bundleYaml" | tr -d '"' | tr -d "'" | cut -d' ' -f 2 || true)
-    if [ -n "$currentParent" ]; then
-        BUNDLE_PARENTS="${currentParent} ${BUNDLE_PARENTS}"
-        findBundleChain "${versionDir}/${currentParent}"
-    fi
+    while IFS= read -r -d '' bundleYaml; do
+        local currentParent=''
+        currentParent=$(grep -oE "^parent: .*$" "$bundleYaml" | tr -d '"' | tr -d "'" | cut -d' ' -f 2 || true)
+        if [ -n "$currentParent" ]; then
+            BUNDLE_PARENTS="${currentParent} ${BUNDLE_PARENTS}"
+            findBundleChain "${RAW_DIR}/${currentParent}"
+        fi
+    done < <(listBundleYamlsIn "$1")
 }
 
 generate() {
     local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
-    local versionFilter="${2:-${VERSION_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
-        versionDir=$(dirname "$bundleDir")
-        versionDirName=$(basename "$versionDir")
         bundleDirName=$(basename "$bundleDir")
-        targetDirName="${versionDirName}-${bundleDirName}"
+        targetDirName="${bundleDirName}"
         targetDir="$EFFECTIVE_DIR/${targetDirName}"
         targetBundleYaml="${targetDir}/bundle.yaml"
-        if [ -n "${versionFilter}" ]; then
-            local skipBundle=1
-            if [[ "$versionDirName" == "$versionFilter" ]]; then skipBundle=0; fi
-            if [ "$skipBundle" -eq 1 ]; then continue; fi
-        fi
         BUNDLE_PARENTS="$bundleDirName"
         findBundleChain "${bundleDir}"
         if [ -n "${bundleFilter}" ]; then
@@ -97,10 +132,10 @@ generate() {
         i=0
         echo "INFO: Creating bundle '$targetDirName' using parents '$BUNDLE_PARENTS'"
         for parent in ${BUNDLE_PARENTS:-}; do
-            parentDir="${versionDir}/${parent}"
-            parentBundleYaml="${parentDir}/bundle.yaml"
+            parentDir="${RAW_DIR}/${parent}"
+            parentBundleYaml=$(find "${parentDir}/" -name "*bundle.yaml")
             mkdir -p "${targetDir}"
-            "${COPY_CMD[@]}" "${parentDir}/bundle.yaml" "${targetBundleYaml}"
+            "${COPY_CMD[@]}" "${parentBundleYaml}" "${targetBundleYaml}"
             for bundleSection in $BUNDLE_SECTIONS; do
                 # special case for plugin catalog since you can only have one.
                 if [[ "catalog" == "${bundleSection}" ]]; then
@@ -164,11 +199,11 @@ generate() {
             fi
         done
         # manage plugin catalog
-        replacePluginCatalog "$targetDir" "$versionDirName" "$targetBundleYaml"
+        replacePluginCatalog "$targetDir" "$CI_VERSION" "$targetBundleYaml"
         # add description to the effective bundles
-        bp=" (version: $versionDirName, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
+        bp=" (version: $CI_VERSION, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
         # remove the parent and availabilityPattern from the effective bundles
-        yq -i 'del(.parent)|del(.availabilityPattern)' "${targetBundleYaml}"
+        yq -i 'del(.parent)' "${targetBundleYaml}"
         # reinstate the checksum of bundle files to provide unique version which does change with git
         checkSum=$(cd "${targetDir}" && find . -type f -exec md5sum {} + | LC_ALL=C sort | md5sum | cut -d' ' -f 1)
         c=$checkSum yq -i '.version = env(c)' "${targetBundleYaml}"
@@ -190,7 +225,7 @@ replacePluginCatalog() {
     local bundleDir=$1
     local ciVersion=$2
     local targetBundleYaml=$3
-    [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<CI_VERSION>)"
+    [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
     finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local checkSumPluginsFilesExpected=''
@@ -214,7 +249,7 @@ replacePluginCatalog() {
     fi
 
     DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
-    checkSumPluginsFilesExpected=$(cd "${bundleDir}"; "${PLUGINS_MD5SUM_CMD[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f 1)
+    checkSumPluginsFilesExpected="${CI_VERSION}-$(cd "${bundleDir}"; "${PLUGINS_MD5SUM_CMD[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f 1)"
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
         checkSumPluginsFilesActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
@@ -222,12 +257,15 @@ replacePluginCatalog() {
     # check for AUTO_UPDATE_CATALOG
     local localDryRun="${DRY_RUN}"
     echo ""
-    echo "Checking plugin files checksum 'actual: $checkSumPluginsFilesActual' vs 'expected: $checkSumPluginsFilesExpected'"
+    echo "AUTO_UPDATE_CATALOG - Checking plugin files checksum 'actual: $checkSumPluginsFilesActual' vs 'expected: $checkSumPluginsFilesExpected'"
     if [ "$checkSumPluginsFilesActual" != "$checkSumPluginsFilesExpected" ]; then
-        if [ "$AUTO_UPDATE_CATALOG" -eq 0 ] && [ "$DRY_RUN" -eq 1 ]; then
-            echo "WARNING: differences in plugins checksum (found in head comment of plugin catalog) found but neither AUTO_UPDATE_CATALOG=1 nor is DRY_RUN=0"
+        if [ -z "$checkSumPluginsFilesActual" ]; then
+            echo "AUTO_UPDATE_CATALOG - no current plugin catalog found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
+            localDryRun=0
+        elif [ "$AUTO_UPDATE_CATALOG" -eq 0 ] && [ "$DRY_RUN" -eq 1 ]; then
+            echo "WARNING: AUTO_UPDATE_CATALOG - differences in plugins checksum (found in head comment of plugin catalog) found but neither AUTO_UPDATE_CATALOG=1 nor is DRY_RUN=0"
         else
-            echo "AUTO_UPDATE_CATALOG: differences in plugins found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
+            echo "AUTO_UPDATE_CATALOG - differences in plugins found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
             localDryRun=0
         fi
     fi
@@ -240,7 +278,7 @@ replacePluginCatalog() {
         # reset head_comment to new checksum
         csum="PLUGIN_FILES_CHECKSUM=$checkSumPluginsFilesExpected" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
     else
-        echo "Set DRY_RUN=0 to execute."
+        echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
     # set the plugin catalog section if needed
     local pluginsInCatalog='0'
@@ -259,17 +297,9 @@ replacePluginCatalog() {
 ## create plugin commands
 pluginCommands() {
     local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
-    local versionFilter="${2:-${VERSION_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
-        versionDir=$(dirname "$bundleDir")
-        versionDirName=$(basename "$versionDir")
-        if [ -n "${versionFilter}" ]; then
-            local skipBundle=1
-            if [[ "$versionDirName" == "$versionFilter" ]]; then skipBundle=0; fi
-            if [ "$skipBundle" -eq 1 ]; then continue; fi
-        fi
         BUNDLE_PARENTS="$bundleDirName"
         findBundleChain "${bundleDir}"
         if [ -n "${bundleFilter}" ]; then
@@ -280,12 +310,12 @@ pluginCommands() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         while IFS= read -r -d '' f; do
-            local DEP_TOOL_CMD=("$DEP_TOOL" -v "$versionDirName" -sAf "$f" -G "$f")
+            local DEP_TOOL_CMD=("$DEP_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
             echo "Running... ${DEP_TOOL_CMD[*]}"
-            if [ "$DRY_RUN" -eq 0 ]; then
+            if [ "$DRY_RUN" -eq 0 ] || [ "$AUTO_UPDATE_CATALOG" -eq 1 ]; then
                 "${DEP_TOOL_CMD[@]}"
             else
-                echo "Set DRY_RUN=0 to execute."
+                echo "Set DRY_RUN=0 or AUTO_UPDATE_CATALOG=1 to execute."
             fi
         done < <(listPluginYamlsIn "$bundleDir")
     done < <(listBundleYamlsIn "$RAW_DIR")

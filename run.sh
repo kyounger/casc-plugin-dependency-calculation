@@ -927,7 +927,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   local customVersion customUrl
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
@@ -958,7 +958,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
     # accounting for custom plugins
@@ -1233,8 +1233,12 @@ reducePluginList() {
           for childToRemove in $(getChildren "$parentToCheck"); do
             if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
               if isCandidateForRemoval "$childToRemove"; then
-                debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
-                removeFromReduceList "$childToRemove"
+                if needsSourceTag "$childToRemove"; then
+                  debug "Keeping child '$childToRemove' in main list due to having the src tag (although could be deleted due to parent $parentToCheck)..."
+                else
+                  debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
+                  removeFromReduceList "$childToRemove"
+                fi
               else
                 debug "Keeping child '$childToRemove' in main list due to having 3rd party parents somewhere..."
               fi
