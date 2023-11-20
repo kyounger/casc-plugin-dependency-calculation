@@ -6,13 +6,12 @@
 
 - [Intro](#intro)
   - [General Features](#general-features)
-- [:information_source: Removal of plugin-installation-manager-tool dependency](#information_source-removal-of-plugin-installation-manager-tool-dependency)
+- [Requirements](#requirements)
 - [Source Plugin Management](#source-plugin-management)
   - [The `src` tag explained](#the-src-tag-explained)
   - [Support for Custom Plugins](#support-for-custom-plugins)
   - [Minimal and Generation-Only Plugins](#minimal-and-generation-only-plugins)
   - [Generation-Only Use Case](#generation-only-use-case)
-- [Requirements](#requirements)
 - [Usage](#usage)
 - [Plugin Metadata](#plugin-metadata)
   - [File header](#file-header)
@@ -50,14 +49,13 @@ This means that as long as you are willing to use the plugin versions in the Clo
   - ability to create air-gapped `plugin-catalog-offline.yaml` files
 - **simple cache** - rudimentary plugin-cache for holding plugins without an artifact repository manager
 
-## :information_source: Removal of plugin-installation-manager-tool dependency
+## Requirements
 
-The plugin installation manager tool is no longer needed, since CloudBees update centers come with a pre-determined set of plugin versions for CAP plugins.
+Use the docker image provided, or
 
-Removal of this dependency results in:
-
-- less network bandwidth
-- reduced execution time
+- jq (tested with `v1.6` and `v1.7`)
+- yq (:warning: Use `v4.35.2` - there is a number of bugs in `v4.40.2`)
+- curl
 
 ## Source Plugin Management
 
@@ -101,11 +99,6 @@ This new `aws-java-sdk-kinesis` plugin is not available in older update centers 
 Using the `-A` will create the plugin catalog using `ec2-fleet` only, thus creating the correct `plugins.yaml` and `plugin-catalog.yaml` for that particular version of CI.
 
 Further examples will be added to the examples folder at a later date.
-## Requirements
-
-- jq
-- yq (v4)
-- curl
 
 ## Usage
 
