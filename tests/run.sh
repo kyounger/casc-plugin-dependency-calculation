@@ -71,8 +71,8 @@ for testName in $TESTS; do
   [ -f "${actualPluginCatalogOffline}" ] || die "Resulting file '$actualPluginCatalogOffline' doesn't exist."
 
   # compare
-  echo "Running diff -sB ${expectedDir} ${actualDir}"
-  diff -sB "${expectedDir}" "${actualDir}" && DIFF_FOUND='' || DIFF_FOUND="y"
+  echo "Running diff -s ${expectedDir} ${actualDir}"
+  diff -s "${expectedDir}" "${actualDir}" && DIFF_FOUND='' || DIFF_FOUND="y"
   if [ -n "${DIFF_FOUND:-}" ]; then
     DIFF_FOUND_SOMEWHERE='y'
     if [[ $CORRECT_TESTS -eq 1 ]]; then
@@ -84,7 +84,7 @@ for testName in $TESTS; do
       addSummary "    Analyze: diff -s ${expectedDir#"${CURRENT_DIR}"/} ${actualDir#"${CURRENT_DIR}"/}"
       addSummary "    Correct: cp ${actualDir#"${CURRENT_DIR}"/}/* ${expectedDir#"${CURRENT_DIR}"/}"
       echo "====================================================="
-      echo "Using: diff -sB ${expectedDir#"${CURRENT_DIR}"/} ${actualDir#"${CURRENT_DIR}"/}"
+      echo "Using: diff -s ${expectedDir#"${CURRENT_DIR}"/} ${actualDir#"${CURRENT_DIR}"/}"
       errorMe "TEST ERROR: Test $testName failed. See above."
     fi
   else
