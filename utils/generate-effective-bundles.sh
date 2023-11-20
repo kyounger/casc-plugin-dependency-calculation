@@ -36,8 +36,9 @@ die() { echo "$*"; exit 1; }
 debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
 
 determineCIVersion() {
+    CI_VERSION="${CI_VERSION:-}"
     # determine CI_VERSION
-    if [ -z "${CI_VERSION:-}" ]; then
+    if [ -z "${CI_VERSION}" ]; then
         local versionDir='' versionDirName=''
         versionDir=$(dirname "$RAW_DIR")
         versionDirName=$(basename "$versionDir")
@@ -54,15 +55,15 @@ determineCIVersion() {
             if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
                 echo "INFO: Setting CI_VERSION according to git branch from command."
                 CI_VERSION="${BASH_REMATCH[1]}"
-            else
-                # we've got this without being able to find the CI_VERSION so...
-                die "Could not determine a CI_VERSION. Checked env var, RAW_DIR's parent dir, GIT_BRANCH env var, and git branch."
             fi
+        else
+            # we've got this without being able to find the CI_VERSION so...
+            die "Could not determine a CI_VERSION. Checked env var, RAW_DIR's parent dir, GIT_BRANCH env var, and git branch."
         fi
     else
         echo "INFO: Setting CI_VERSION according to CI_VERSION env var."
     fi
-    [[ "$CI_VERSION" =~ $CI_TEST_PATTERN ]] || die "CI_VERSION '${CI_VERSION}' is not a valid version."
+    [[ "${CI_VERSION}" =~ $CI_TEST_PATTERN ]] || die "CI_VERSION '${CI_VERSION}' is not a valid version."
 }
 
 processVars() {
