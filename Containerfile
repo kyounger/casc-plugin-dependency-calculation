@@ -1,6 +1,6 @@
 FROM eclipse-temurin:11
-ADD  --chmod=655 https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 /usr/bin/yq
-ADD  --chmod=655 https://github.com/jqlang/jq/releases/latest/download/jq-linux64 /usr/bin/jq
+ADD  --chmod=655 https://github.com/mikefarah/yq/releases/download/v4.35.2/yq_linux_amd64 /usr/bin/yq
+ADD  --chmod=655 https://github.com/jqlang/jq/releases/download/jq-1.7/jq-linux-amd64 /usr/bin/jq
 COPY run.sh /usr/local/bin/cascdeps
 COPY utils/generate-effective-bundles.sh /usr/local/bin/cascgen
 
