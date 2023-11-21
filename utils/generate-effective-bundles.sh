@@ -232,16 +232,14 @@ replacePluginCatalog() {
     local checkSumPluginsFilesExpected=''
     local checkSumPluginsFilesActual=''
     local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
-    local PLUGINS_MD5SUM_CMD=("md5sum")
-    local fName=''
+    local PLUGINS_MD5SUM_CMD=("yq" "--no-doc" ".plugins")
     while IFS= read -r -d '' f; do
-        fName=$(basename "$f")
-        PLUGINS_MD5SUM_CMD+=("$fName")
+        PLUGINS_MD5SUM_CMD+=("$f")
         DEP_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$bundleDir")
 
     # do we even have plugins files?
-    if [ "md5sum" == "${PLUGINS_MD5SUM_CMD[*]}" ]; then
+    if [ "yq --no-doc .plugins" == "${PLUGINS_MD5SUM_CMD[*]}" ]; then
         echo "No plugins yaml files found.}"
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
@@ -250,7 +248,13 @@ replacePluginCatalog() {
     fi
 
     DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
-    checkSumPluginsFilesExpected="${CI_VERSION}-$(cd "${bundleDir}"; "${PLUGINS_MD5SUM_CMD[@]}" | LC_ALL=C sort | md5sum | cut -d' ' -f 1)"
+    # this is a tricky one, but we want
+    # - unique list of plugins from all files
+    # - comments should be preserved so that last comment stays (important for custom tags)
+    # - see the bottom of this script for an example
+    local checkSumPlugins=''
+    checkSumPlugins=$("${PLUGINS_MD5SUM_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false | md5sum | cut -d' ' -f 1)
+    checkSumPluginsFilesExpected="${CI_VERSION}-${checkSumPlugins}"
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
         checkSumPluginsFilesActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
@@ -384,3 +388,54 @@ case $ACTION in
         ;;
 esac
 echo "Done"
+
+# Example: unique plugins
+#
+# 1. WE TAKE THE PLUGINS FROM ALL FILES
+#
+# ❯ yq --no-doc '.plugins' plugins.0.base.plugins.plugins.yaml plugins.1.bundle-a.plugins.plugins.yaml plugins.2.controller-c.plugins.plugins.yaml
+# # base comment
+# - id: beer # 3rd src
+# - id: cloudbees-casc-client # cap src
+# - id: cloudbees-casc-items-controller # cap src
+# - id: cloudbees-prometheus # 3rd src
+# - id: configuration-as-code # cap src
+# - id: github # cap src
+# - id: infradna-backup # cap src
+# - id: managed-master-hibernation # cap src
+# - id: pipeline-model-definition # cap src
+# - id: pipeline-stage-view # cap src
+# - id: sshd # cap src
+
+# # bundle-a comment
+# - id: beer # 3rd src
+# - id: branch-api # cap dep
+# - id: job-dsl # 3rd src
+
+# # controller-c comment
+# - id: beer # 3rd src
+# - id: git # cap dep
+# - id: jfrog # 3rd src
+# - id: pipeline-model-definition # cap dep
+#
+# 2. WE PIPE INTO REVERSE, UNIQUE_BY_ID, SORT_BY_ID (the controller-c comment is preserved)
+#
+# .... | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false
+#
+# # controller-c comment
+# - id: beer # 3rd src
+# - id: branch-api # cap dep
+# - id: cloudbees-casc-client # cap src
+# - id: cloudbees-casc-items-controller # cap src
+# - id: cloudbees-prometheus # 3rd src
+# - id: configuration-as-code # cap src
+# - id: git # cap dep
+# - id: github # cap src
+# - id: infradna-backup # cap src
+# - id: jfrog # 3rd src
+# - id: job-dsl # 3rd src
+# - id: managed-master-hibernation # cap src
+# - id: pipeline-model-definition # cap dep
+# - id: pipeline-stage-view # cap src
+# - id: sshd # cap src
+
