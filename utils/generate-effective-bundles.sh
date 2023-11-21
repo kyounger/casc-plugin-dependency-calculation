@@ -69,10 +69,10 @@ determineCIVersion() {
 processVars() {
     echo "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
-    [ -f "${DEP_TOOL}" ] || die "DEP_TOOL is not a file"
-    [ -x "${DEP_TOOL}" ] || die "DEP_TOOL is not executable"
-    [ -d "${RAW_DIR}" ] || die "RAW_DIR is not a directory"
-    [ -d "${EFFECTIVE_DIR}" ] || die "EFFECTIVE_DIR is not a directory"
+    [ -f "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not a file"
+    [ -x "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not executable"
+    [ -d "${RAW_DIR}" ] || die "RAW_DIR '${RAW_DIR}' is not a directory"
+    [ -d "${EFFECTIVE_DIR}" ] || die "EFFECTIVE_DIR '${EFFECTIVE_DIR}'  is not a directory"
     determineCIVersion
     echo "Running with:
     DEP_TOOL=$DEP_TOOL
@@ -84,7 +84,7 @@ processVars() {
 }
 
 listFileXInY() {
-    find -L "$1" -type f -name "$2" -print0
+    find -L "$1" -type f -name "$2" -print0 | sort -z
 }
 
 listBundleYamlsIn() {
@@ -296,7 +296,7 @@ replacePluginCatalog() {
 }
 
 ## create plugin commands
-pluginCommands() {
+plugins() {
     local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
@@ -368,13 +368,19 @@ case $ACTION in
         shift
         generate "${@}"
         ;;
-    pluginCommands)
+    plugins)
         processVars
         shift
-        pluginCommands "${@}"
+        plugins "${@}"
+        ;;
+    all)
+        processVars
+        shift
+        plugins "${@}"
+        generate "${@}"
         ;;
     *)
-        die "Unknown action '$ACTION' (actions are: pre-commit, generate, pluginCommands)"
+        die "Unknown action '$ACTION' (actions are: pre-commit, generate, plugins, all)"
         ;;
 esac
 echo "Done"
