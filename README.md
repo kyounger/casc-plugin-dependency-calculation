@@ -7,12 +7,16 @@
 - [Intro](#intro)
   - [General Features](#general-features)
 - [Requirements](#requirements)
+- [Usage](#usage)
+  - [Using the docker image](#using-the-docker-image)
+  - [Using locally](#using-locally)
+  - [Local Development](#local-development)
 - [Source Plugin Management](#source-plugin-management)
   - [The `src` tag explained](#the-src-tag-explained)
   - [Support for Custom Plugins](#support-for-custom-plugins)
   - [Minimal and Generation-Only Plugins](#minimal-and-generation-only-plugins)
   - [Generation-Only Use Case](#generation-only-use-case)
-- [Usage](#usage)
+- [Usage](#usage-1)
 - [Plugin Metadata](#plugin-metadata)
   - [File header](#file-header)
   - [Comment style - `line`](#comment-style---line)
@@ -54,8 +58,69 @@ This means that as long as you are willing to use the plugin versions in the Clo
 Use the docker image provided, or
 
 - jq (tested with `v1.6` and `v1.7`)
-- yq (:warning: Use `v4.35.2` - there is a number of bugs in `v4.40.2`)
+- yq (tested with `v4.35.2`and `v4.40.2`)
 - curl
+
+## Usage
+
+The tool can be used either locally or using the docker image.
+
+### Using the docker image
+
+Within the directory of your choice...
+
+...use as one-shot container with:
+
+```sh
+docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it ghcr.io/kyounger/casc-plugin-dependency-calculation bash
+```
+
+...use as a long-lived container to stop and start with:
+
+```sh
+docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) -d ghcr.io/kyounger/casc-plugin-dependency-calculation tail -f /dev/null
+
+```
+
+Whereby...
+
+```mono
+  -v $(pwd):$(pwd)         # mount your current directory
+  -w $(pwd)                # use your current directory as the working directory
+  -u $(id -u):$(id -g)     # use your own user
+```
+
+### Using locally
+
+Ensuring you meet the requirements above.
+
+The docker image provides two commands
+
+- `cascdeps` which is equal to the main `run.sh` at the root of this repository
+- `cascgen` which is equal to the `utils/generate-effective-bundles.sh` util script
+
+If you wish to have the same thing when running locally, simply add a couple of symlinks, e.g.
+
+```sh
+❯ ls -l $(which cascdeps)
+lrwxrwxrwx 1 fred fred 79 Nov 13 21:04 /home/fred/bin/cascdeps -> /path/to/casc-plugin-dependency-calculation/run.sh
+❯ ls -l $(which cascgen)
+lrwxrwxrwx 1 fred fred 108 Nov 13 22:45 /home/fred/bin/cascgen -> /path/to/casc-plugin-dependency-calculation/utils/generate-effective-bundles.sh
+```
+
+### Local Development
+
+Building your own image:
+
+```sh
+docker build -t casc-plugin-dependency-calculation:dev -f Containerfile .
+```
+
+Then using it, for example, to run tests:
+
+```sh
+docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it casc-plugin-dependency-calculation:v1 ./tests/run.sh simple
+```
 
 ## Source Plugin Management
 
