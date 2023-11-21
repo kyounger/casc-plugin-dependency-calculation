@@ -9,10 +9,11 @@ ENV YQ_VERSION=v4.40.2 \
 # utils and non-root user
 RUN apk add --update --no-cache \
     bash \
+    tree \
     curl \
     findutils \
     git \
-    && addgroup -S casc-user && adduser -S casc-user -G casc-user -s /bin/bash
+    && addgroup -S -g 1000 casc-user && adduser -S -u 1000 casc-user -G casc-user -s /bin/bash
 
 # kustomize and tools
 RUN curl -sLO https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_${ARCH}.tar.gz && \
