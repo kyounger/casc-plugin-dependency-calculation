@@ -1,6 +1,4 @@
 plugins:
   - id: job-dsl
-  - id: beer
   # tag:custom:url=https://acme.org/artifactory/some-custom-plugin/1.0/some-custom-plugin-1.0.hpi
-  # tag:custom:requires=beer
-  - id: some-custom-plugin
+  - id: some-custom-plugin # 3rd src

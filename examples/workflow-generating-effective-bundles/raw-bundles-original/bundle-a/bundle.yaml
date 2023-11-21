@@ -6,12 +6,12 @@ version: '1'
 availabilityPattern: ".*"
 jcascMergeStrategy: 'override'
 jcasc:
-  - 'jcasc'
+  - jenkins.yaml
 items:
-  - 'items'
+  - items.yaml
 catalog:
   - 'catalog'
 plugins:
-  - 'plugins'
+  - plugins.yaml
 variables:
-  - 'variables'
+  - variables.yaml
