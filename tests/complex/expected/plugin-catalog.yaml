@@ -56,7 +56,7 @@ configurations:
       h2-api:
         version: "11.1.4.199-12.v9f4244395f7a_"
       hashicorp-vault-plugin:
-        version: "363.va_f8c1627db_b_a"
+        version: "364.vf5d54b_3dc313"
       ivy:
         version: "2.4"
       job-dsl:

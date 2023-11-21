@@ -56,7 +56,7 @@ configurations:
       h2-api:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/h2-api/11.1.4.199-12.v9f4244395f7a_/h2-api.hpi"
       hashicorp-vault-plugin:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/hashicorp-vault-plugin/363.va_f8c1627db_b_a/hashicorp-vault-plugin.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/hashicorp-vault-plugin/364.vf5d54b_3dc313/hashicorp-vault-plugin.hpi"
       ivy:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/ivy/2.4/ivy.hpi"
       job-dsl:
