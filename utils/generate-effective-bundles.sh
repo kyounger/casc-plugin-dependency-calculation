@@ -5,7 +5,7 @@ set -euo pipefail
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
 DRY_RUN="${DRY_RUN:-1}"
 # automatically update catalog if plugin yamls have changed. supercedes DRY_RUN
-AUTO_UPDATE_CATALOG="${AUTO_UPDATE_CATALOG:-0}"
+AUTO_UPDATE_CATALOG="${AUTO_UPDATE_CATALOG:-1}"
 DEBUG="${DEBUG:-0}"
 TREE_CMD=$(command -v tree || true)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
