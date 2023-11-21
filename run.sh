@@ -433,6 +433,21 @@ copyOrExtractMetaInformation() {
     TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR["$key"]="${value:=$key}"
   done < "$TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT"
 
+  # are we going to be auto-tagging src plugins?
+  CATEGORY_SRC_ONLY_AUTO_TAG=0
+  if [[ -z "${CATEGORY_SRC_ONLY_ARR[*]:-}" ]]; then
+    if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
+      info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
+      CATEGORY_SRC_ONLY_AUTO_TAG=1
+      info "Setting PLUGIN_SOURCE=all since we don't have any and want to auto tag afterwards."
+      PLUGIN_SOURCE=all
+    else
+      info "No 'src' comments found in the plugin list. Use '-s' to auto-generate comments on final list."
+    fi
+  else
+    info "Some 'src' comments found in the plugin list. Comments will be copied across BUT NOT auto-generated."
+  fi
+
   # create source list
   unset PLUGIN_SOURCE_ARR
   declare -g -A PLUGIN_SOURCE_ARR
@@ -454,18 +469,6 @@ copyOrExtractMetaInformation() {
     isSourced "$p" || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
   done
   yq '.plugins[].id' "${TARGET_PLUGINS_SOURCED_YAML}" | sort > "${TARGET_PLUGINS_SOURCED_YAML_TXT}"
-  # are we going to be auto-tagging src plugins?
-  CATEGORY_SRC_ONLY_AUTO_TAG=0
-  if [[ -z "${CATEGORY_SRC_ONLY_ARR[*]:-}" ]]; then
-    if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
-      info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
-      CATEGORY_SRC_ONLY_AUTO_TAG=1
-    else
-      info "No 'src' comments found in the plugin list. Use '-s' to auto-generate comments on final list."
-    fi
-  else
-    info "Some 'src' comments found in the plugin list. Comments will be copied across BUT NOT auto-generated."
-  fi
 
   info "Sanity checking '$PLUGIN_YAML_PATH' for missing custom requirements."
   local missingRequirements=
