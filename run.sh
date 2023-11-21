@@ -275,13 +275,11 @@ setScriptVars() {
   elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -gt 1 ]; then
     PLUGIN_YAML_PATH=$(mktemp)
     info "Multiple source files passed. Creating temporary plugins.yaml file '$PLUGIN_YAML_PATH'."
-    # looping through in reverse order since the yq ireduce does not overwrite existing entries.
-    for ((i=${#PLUGIN_YAML_PATHS_FILES[@]}-1; i>=0; i--)); do
-      local currentPluginYamlPath="${PLUGIN_YAML_PATHS_FILES[$i]}"
+    # looping through and merging plugins files.
+    for currentPluginYamlPath in "${PLUGIN_YAML_PATHS_FILES[@]}"; do
       # shellcheck disable=SC2016
-            tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}")
-            echo "$tmpStr" > "$PLUGIN_YAML_PATH"
-          done
+      yq -i eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}"
+    done
   fi
   # sanity checks
   [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
@@ -392,8 +390,8 @@ copyOrExtractMetaInformation() {
   if ! equalPlugins; then
     if [ "$DEDUPLICATE_PLUGINS" -eq 1 ]; then
       info "Found duplicates above - removing from '$PLUGIN_YAML_PATH'."
-            deDupes=$(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") \
-        yq -i '.plugins = env(deDupes)' "$PLUGIN_YAML_PATH"
+      # now removing any duplicates
+      yq -i '.plugins |= (reverse | unique_by(.id) | sort_by(.id))' "$PLUGIN_YAML_PATH"
       equalPlugins || die "Something went wrong with the deduplication. Please check the commands used..."
     else
       die "Please use '-M' or remove the duplicate plugin above before continuing."
@@ -1077,7 +1075,11 @@ Plugin Categories:
  dep - installed as dependency
  src - used as a source plugin for this list
 "
-
+  # yq v4.4x no longer adds a new line between header and doc
+  if [[ "$(yq --version)" =~ v4\.4 ]]; then
+    HEADER="${HEADER}
+"
+  fi
   case "${PLUGIN_YAML_COMMENTS_STYLE}" in
       line)
         HEADER="$HEADER" yq -i '. head_comment=strenv(HEADER)' "$TARGET_PLUGINS_YAML"

@@ -1,7 +1,7 @@
 FROM alpine
 
 # tools
-ENV YQ_VERSION=v4.35.2 \
+ENV YQ_VERSION=v4.40.2 \
     JQ_VERSION=jq-1.7 \
     KUSTOMIZE_VERSION=v5.2.1 \
     ARCH=amd64
