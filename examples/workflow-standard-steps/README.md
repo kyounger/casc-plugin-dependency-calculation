@@ -4,6 +4,8 @@
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
 - [Intro](#intro)
+  - [The `src` tag explained](#the-src-tag-explained)
+  - [Support for Custom Plugins](#support-for-custom-plugins)
 - [Obtaining a `plugins.yaml` from a controller](#obtaining-a-pluginsyaml-from-a-controller)
 - [Preparing your `plugins.yaml`](#preparing-your-pluginsyaml)
   - [Minimum viable vs raw list](#minimum-viable-vs-raw-list)
@@ -31,6 +33,14 @@ We will look at:
 - creating the `plugin-catalog.yaml` and `plugins.yaml` for a given version of CI
 - recreating the `plugin-catalog.yaml` and `plugins.yaml` for an upgrade
 - making changes
+
+### The `src` tag explained
+
+More information on [the src tag](./examples/the-src-tag/README.md).
+
+### Support for Custom Plugins
+
+See the information for [custom plugins tags](./examples/custom-plugins-tags/README.md).
 
 ## Obtaining a `plugins.yaml` from a controller
 

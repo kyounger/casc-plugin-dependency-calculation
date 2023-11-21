@@ -13,8 +13,6 @@
   - [Local Development](#local-development)
 - [NEW: Effective Bundle Management](#new-effective-bundle-management)
 - [Source Plugin Management](#source-plugin-management)
-  - [The `src` tag explained](#the-src-tag-explained)
-  - [Support for Custom Plugins](#support-for-custom-plugins)
 - [Additional Plugin Metadata](#additional-plugin-metadata)
   - [File header](#file-header)
 - [Unnecessary Plugins Check](#unnecessary-plugins-check)
@@ -125,14 +123,6 @@ See the example page [generating effective bundles](./examples/workflow-generati
 ## Source Plugin Management
 
 A better way of managing plugin lists has been added. See the [Standard Workflow](examples/workflow-standard-steps/README.md) for more details
-
-### The `src` tag explained
-
-More information on [the src tag](./examples/the-src-tag/README.md).
-
-### Support for Custom Plugins
-
-See the information for [custom plugins tags](./examples/custom-plugins-tags/README.md).
 
 ## Additional Plugin Metadata
 
