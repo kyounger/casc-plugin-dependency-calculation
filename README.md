@@ -16,6 +16,7 @@
   - [Support for Custom Plugins](#support-for-custom-plugins)
   - [Minimal and Generation-Only Plugins](#minimal-and-generation-only-plugins)
   - [Generation-Only Use Case](#generation-only-use-case)
+- [NEW: Effective Bundle Management](#new-effective-bundle-management)
 - [Usage](#usage-1)
 - [Plugin Metadata](#plugin-metadata)
   - [File header](#file-header)
@@ -116,7 +117,7 @@ Building your own image:
 docker build -t casc-plugin-dependency-calculation:dev -f Containerfile .
 ```
 
-Then using it, for example, to run tests:
+Then using it, for example, to run tests before pushing commits:
 
 ```sh
 docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it casc-plugin-dependency-calculation:v1 ./tests/run.sh simple
@@ -164,6 +165,12 @@ This new `aws-java-sdk-kinesis` plugin is not available in older update centers 
 Using the `-A` will create the plugin catalog using `ec2-fleet` only, thus creating the correct `plugins.yaml` and `plugin-catalog.yaml` for that particular version of CI.
 
 Further examples will be added to the examples folder at a later date.
+
+## NEW: Effective Bundle Management
+
+The plugin dependency management has now been integrated with a new [generate-effective-bundles.sh](./utils/generate-effective-bundles.sh) script.
+
+See the example page [generating effective bundles](./examples/workflow-generating-effective-bundles/README.md) for more details.
 
 ## Usage
 
