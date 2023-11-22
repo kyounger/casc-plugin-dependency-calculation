@@ -12,31 +12,30 @@
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
 
 plugins:
   # we want to keep this plugin regardless - src added manually
-  - id: aws-credentials # cap lst dep src
-  - id: aws-java-sdk # 3rd lst dep
-  - id: aws-java-sdk-cloudformation # 3rd lst dep
-  - id: aws-java-sdk-codebuild # 3rd lst dep
-  - id: aws-java-sdk-ecr # 3rd lst dep
-  - id: aws-java-sdk-ecs # 3rd lst dep
-  - id: aws-java-sdk-efs # 3rd lst dep
-  - id: aws-java-sdk-elasticbeanstalk # cap lst dep
-  - id: aws-java-sdk-iam # 3rd lst dep
-  - id: aws-java-sdk-logs # 3rd lst dep
-  - id: aws-java-sdk-sns # 3rd lst dep
-  - id: aws-java-sdk-sqs # 3rd lst dep
-  - id: aws-java-sdk-ssm # 3rd lst dep
-  - id: basic-branch-build-strategies # 3rd lst src
+  - id: aws-credentials # cap dep src
+  - id: aws-java-sdk # 3rd dep
+  - id: aws-java-sdk-cloudformation # 3rd dep
+  - id: aws-java-sdk-codebuild # 3rd dep
+  - id: aws-java-sdk-ecr # 3rd dep
+  - id: aws-java-sdk-ecs # 3rd dep
+  - id: aws-java-sdk-efs # 3rd dep
+  - id: aws-java-sdk-elasticbeanstalk # cap dep
+  - id: aws-java-sdk-iam # 3rd dep
+  - id: aws-java-sdk-logs # 3rd dep
+  - id: aws-java-sdk-sns # 3rd dep
+  - id: aws-java-sdk-sqs # 3rd dep
+  - id: aws-java-sdk-ssm # 3rd dep
+  - id: basic-branch-build-strategies # 3rd src
   - id: branch-api # cap dep
-  - id: cloudbees-casc-client # cap lst src
-  - id: cloudbees-casc-items-controller # cap lst src
-  - id: configuration-as-code # cap lst src
-  - id: ec2-fleet # 3rd lst src
-  - id: email-ext # cap lst src
-  - id: mock-security-realm # 3rd lst src
-  - id: ssh-slaves # cap lst dep
-  - id: sshd # cap lst src
+  - id: cloudbees-casc-client # cap src
+  - id: cloudbees-casc-items-controller # cap src
+  - id: configuration-as-code # cap src
+  - id: ec2-fleet # 3rd src
+  - id: email-ext # cap src
+  - id: mock-security-realm # 3rd src
+  - id: ssh-slaves # cap dep
+  - id: sshd # cap src

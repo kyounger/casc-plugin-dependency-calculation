@@ -1,0 +1,16 @@
+apiVersion: '1'
+id: 'base-controller'
+description: 'Base Bundle'
+version: '1'
+availabilityPattern: ".*"
+jcascMergeStrategy: 'override'
+jcasc:
+  - jenkins.yaml
+items:
+  - items.yaml
+catalog:
+  - 'catalog'
+plugins:
+  - plugins.yaml
+variables:
+  - variables.yaml

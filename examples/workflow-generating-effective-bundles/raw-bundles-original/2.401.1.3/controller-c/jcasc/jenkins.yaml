@@ -1,3 +1,0 @@
----
-jenkins:
-  systemMessage: "Configured with CasC from ${bundleName}"

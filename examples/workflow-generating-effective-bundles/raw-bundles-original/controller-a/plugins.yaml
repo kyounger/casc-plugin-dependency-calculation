@@ -1,0 +1,4 @@
+plugins:
+  - id: beer
+  # tag:custom:url=https://acme.org/artifactory/some-custom-plugin/1.0/some-custom-plugin-2.0.hpi
+  - id: some-custom-plugin # 3rd src

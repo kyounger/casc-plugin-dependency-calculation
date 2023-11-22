@@ -2,50 +2,36 @@
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-## Intro
+## Contents
 
 - [Intro](#intro)
-- [:information_source: Removal of plugin-installation-manager-tool dependency](#information_source-removal-of-plugin-installation-manager-tool-dependency)
-- [Source Plugin Management](#source-plugin-management)
-- [New Features](#new-features)
-  - [Minimal and Generation-Only Plugins](#minimal-and-generation-only-plugins)
-  - [Generation-Only Use Case](#generation-only-use-case)
+  - [General Features](#general-features)
 - [Requirements](#requirements)
 - [Usage](#usage)
-- [Plugin Metadata](#plugin-metadata)
+  - [Using the docker image](#using-the-docker-image)
+  - [Using locally](#using-locally)
+  - [Local Development](#local-development)
+- [NEW: Effective Bundle Management](#new-effective-bundle-management)
+- [Source Plugin Management](#source-plugin-management)
+- [Additional Plugin Metadata](#additional-plugin-metadata)
   - [File header](#file-header)
-  - [Comment style - `line`](#comment-style---line)
 - [Unnecessary Plugins Check](#unnecessary-plugins-check)
 - [Tests](#tests)
 - [Examples](#examples)
-- [Notes](#notes)
-- [Advanced](#advanced)
-- [TODO](#todo)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Intro
 
 Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (any tier), and it will:
 
-1. Generate the `plugin-catalog.yaml` file for you in the same directory, including all versions and transitive dependencies.
-2. Update the `plugins.yaml` file you originally specifed with the additional transitive dependencies.
+1. Generate the `plugin-catalog.yaml` file for you including all versions and transitive dependencies.
+2. Generate variations of the `plugins.yaml` file you originally specifed with any additional transitive dependencies.
+3. Allow you to specify where you want the resulting files to go.
 
 This means that as long as you are willing to use the plugin versions in the CloudBees Update Centers (which you should be doing), then all you ever need to do is add plugins to the `plugins.yaml` file and this script will handle the rest. No more manually crafting plugin catalogs!
 
-## :information_source: Removal of plugin-installation-manager-tool dependency
-
-The plugin installation manager tool is no longer needed, since CloudBees update centers come with a pre-determined set of plugin versions for CAP plugins.
-
-Removal of this dependency results in:
-
-- less network bandwidth
-- reduced execution time
-
-## Source Plugin Management
-
-A better way of managing plugin lists has been added. See the [Standard Workflow](examples/workflow-standard-steps/README.md) for more details
-
-## New Features
+### General Features
 
 - **minimal plugin list** - create a minimal viable list of plugins based on a starting list. See `-s` for more details.
 - **multiple CBCI versions** - create a master plugin catalog for multiple CBCI versions
@@ -59,92 +45,90 @@ A better way of managing plugin lists has been added. See the [Standard Workflow
   - ability to create air-gapped `plugin-catalog-offline.yaml` files
 - **simple cache** - rudimentary plugin-cache for holding plugins without an artifact repository manager
 
-### Minimal and Generation-Only Plugins
-
-The `-s` flag can be used to create:
-
-- `plugins-minimal.yaml`: the minimal viable list of plugins needed to create the controller as requested.
-- `plugins-minimal-for-generation-only.yaml`: the bare-minimum list of plugins needed by the script to create the same resulting `plugins.yaml`
-
-These minimal and gen-only plugins are also categorised as `min` and `gen` in the comments of the main `plugins.yaml`
-
-### Generation-Only Use Case
-
-The `-A` flag tells the script to use only those plugins from the `plugins.yaml` which are marked as "generation only" (`gen`) in order to create the new list.
-
-For example, take the `ec2-fleet` plugin which depends on the `aws-java-sdk` plugin, which pulls in a number of dependencies such as `aws-java-sdk-ec2`, etc.
-
-A recent version of the `aws-java-sdk` plugin added the `aws-java-sdk-kinesis` plugin as a dependency (see below - other plugins removed for brevity).
-
-```yaml
-plugins:
-...
-- id: aws-java-sdk # 3rd lst dep src min
-- id: aws-java-sdk-kinesis # 3rd lst dep src min
-- id: ec2-fleet # 3rd lst src min gen
-```
-
-This new `aws-java-sdk-kinesis` plugin is not available in older update centers meaning the catalog generation would fail for older versions of CI.
-
-Using the `-A` will create the plugin catalog using `ec2-fleet` only, thus creating the correct `plugins.yaml` and `plugin-catalog.yaml` for that particular version of CI.
-
-Further examples will be added to the examples folder at a later date.
 ## Requirements
 
-- docker (only for the v0.x branch)
-- jq
-- yq (v4)
+Use the docker image provided, or
+
+- jq (tested with `v1.6` and `v1.7`)
+- yq (tested with `v4.35.2`and `v4.40.2`)
 - curl
 
 ## Usage
 
-```mono
-Usage: run.sh -v <CI_VERSION> [OPTIONS]
+The tool can be used either locally or using the docker image.
 
-    -h          display this help and exit
-    -f FILE     path to the plugins.yaml file (can be set multiple times)
-    -M          When processing multiple plugins files, DEDUPLICATE the list first
-    -v          The version of CloudBees CI (e.g. 2.263.4.2)
-    -t          The instance type (oc, oc-traditional, cm, mm)
+### Using the docker image
 
-    -F FILE     Final target of the resulting plugins.yaml
-    -c FILE     Final target of the resulting plugin-catalog.yaml
-    -C FILE     Final target of the resulting plugin-catalog-offline.yaml
-    -g FILE     Final target of the resulting plugins-minimal-for-generation-only.yaml
-    -G FILE     Final target of the resulting plugins-minimal.yaml
+Within the directory of your choice...
 
-    -d          Download plugins to use later (e.g. PFILE in exec hooks)
-    -D STRING   Offline pattern or set PLUGIN_CATALOG_OFFLINE_URL_BASE
-                    This make use of the PNAME and PVERSION markers
-                    e.g. -D 'http://plugin-catalog/plugins/PNAME/PVERSION/PNAME.hpi'
-                    If not set, the URL defaults to the official url of the plugin
-    -e FILE     Exec-hook - script to call when processing 3rd party plugins
-                    script will have access env vars:
-                    PNAME - the name of the plugin
-                    PVERSION - the version of the plugin
-                    PURL - the url as specified above
-                    PURL_OFFICIAL - the official default url given in the update center
-                    PFILE - the path to the downloaded plugin (NOTE: empty if '-d' not used)
-                    can be used to automate the uploading of plugins to a repository manager
-                    see examples under examples/exec-hooks
+...use as one-shot container with:
 
-    -i          Include optional dependencies in the plugins.yaml
-    -I          Include bootstrap dependencies in the plugins.yaml
-    -m STYLE    Include plugin metadata as comment (line, none)
-                    defaults to 'line'
-    -A          Use 'generation-only' plugins as the source list when calculating dependencies.
-    -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
-    -S          Disable CVE check against plugins (added to metadata)
-
-    -R          Refresh the downloaded update center jsons (no-cache)
-    -V          Verbose logging (for debugging purposes)
+```sh
+docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it ghcr.io/kyounger/casc-plugin-dependency-calculation bash
 ```
 
-## Plugin Metadata
+...use as a long-lived container to stop and start with:
+
+```sh
+docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) -d ghcr.io/kyounger/casc-plugin-dependency-calculation tail -f /dev/null
+
+```
+
+Whereby...
+
+```mono
+  -v $(pwd):$(pwd)         # mount your current directory
+  -w $(pwd)                # use your current directory as the working directory
+  -u $(id -u):$(id -g)     # use your own user
+```
+
+### Using locally
+
+Ensuring you meet the requirements above.
+
+The docker image provides two commands
+
+- `cascdeps` which is equal to the main `run.sh` at the root of this repository
+- `cascgen` which is equal to the `utils/generate-effective-bundles.sh` util script
+
+If you wish to have the same thing when running locally, simply add a couple of symlinks, e.g.
+
+```sh
+❯ ls -l $(which cascdeps)
+lrwxrwxrwx 1 fred fred 79 Nov 13 21:04 /home/fred/bin/cascdeps -> /path/to/casc-plugin-dependency-calculation/run.sh
+❯ ls -l $(which cascgen)
+lrwxrwxrwx 1 fred fred 108 Nov 13 22:45 /home/fred/bin/cascgen -> /path/to/casc-plugin-dependency-calculation/utils/generate-effective-bundles.sh
+```
+
+### Local Development
+
+Building your own image:
+
+```sh
+docker build -t casc-plugin-dependency-calculation:dev -f Containerfile .
+```
+
+Then using it, for example, to run tests before pushing commits:
+
+```sh
+docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it casc-plugin-dependency-calculation:dev ./tests/run.sh simple
+```
+
+## NEW: Effective Bundle Management
+
+The plugin dependency management has now been integrated with a new [generate-effective-bundles.sh](./utils/generate-effective-bundles.sh) script.
+
+See the example page [generating effective bundles](./examples/workflow-generating-effective-bundles/README.md) for more details.
+
+## Source Plugin Management
+
+A better way of managing plugin lists has been added. See the [Standard Workflow](examples/workflow-standard-steps/README.md) for more details
+
+## Additional Plugin Metadata
 
 This tool now provides metadata to the `plugins.yaml` giving more context to the included plugins.
 
-Metadata is added in the form of comments. These can be added above, below, or on the same line as the plugin.
+Metadata is added in the form of comments behind the plugin.
 
 ### File header
 
@@ -166,22 +150,8 @@ The file now comes with a header describing the categories.
 #  cve - are there open security issues?
 #  bst - installed by default
 #  dep - installed as dependency
-#  lst - installed because it was listed
 #  src - used as a source plugin for this list
-#  min - is part of the viable 'minimal' set of plugins
-#  gen - is part of the non-viable 'generation-only' set of plugins
-```
-
-### Comment style - `line`
-
-Comments are placed behind the plugin.
-
-```yaml
-plugins:
-  - id: code-coverage-api # 3rd lst
-  - id: commons-lang3-api # cap dep
-  - id: ec2 # cap lst
-  - id: hashicorp-vault-plugin # 3rd lst cve
+plugins
 ```
 
 ## Unnecessary Plugins Check
@@ -228,47 +198,21 @@ Please see the [tests page](./tests/README.md) for details on how to run and cre
 
 ## Examples
 
+Please see the [examples directory](./examples/) for more examples.
+
 A single run with the plugins.yaml file in the same directory as `run.sh`. This creates `plugin-catalog.yaml`:
 
 `./run.sh -v 2.263.4.2`
 
 A single run with a specified path to plugins.yaml file, but using the `-x` option to turn on the "inplace update". This will overwrite the `plugins.yaml` and `plugin-catalog.yaml` files.
 
-`./run.sh -v 2.263.4.2 -f /path/to/plugins.yaml -x`
+`./run.sh -v 2.263.4.2 -f /path/to/plugins.yaml`
 
 Multiple runs taking advantage of caching and generating multiple different `plugin-catalogs.yaml` and updating their corresponding `plugins.yaml`:
 
 ``` bash
-./run.sh -v 2.263.1.2 -f /bundle1/plugins.yaml -x
-./run.sh -v 2.263.4.2 -f /bundle2/plugins.yaml -x
-./run.sh -v 2.263.4.2 -f /bundle3/plugins.yaml -x
-./run.sh -v 2.277.1.2 -f /bundle4/plugins.yaml -x
+./run.sh -v 2.263.1.2 -f /bundle1/plugins.yaml
+./run.sh -v 2.263.4.2 -f /bundle2/plugins.yaml
+./run.sh -v 2.263.4.2 -f /bundle3/plugins.yaml
+./run.sh -v 2.277.1.2 -f /bundle4/plugins.yaml
 ```
-
-## Notes
-
-- This will NOT update your `plugins.yaml` file unless you specify the `-x` flag.
-- This process caches all resources that it fetches under a `.cache` directory in the PWD. It caches multiple versions of the artifacts to enable re-running with different CI_VERSION.
-  - `jenkins.war` from the docker image
-  - `jenkins-plugin-manager.jar` download from github releases
-  - `update-center.json` is cached from the UC download (this can reduce network traffic and delay if wanting to run this subseqently against multiple different `plugins.yaml`s.
-
-## Advanced
-
-**WARNING:** this should no longer be necessary, and could in fact lead to incorrect results. Use with caution.
-
-These two settings are adjustable by exporting them in the shell prior to running. This, for example, is running the process again the client master UC and docker image. *Note that caching does not handle changing this on subseqent runs!*
-
-```bash
-export CB_UPDATE_CENTER="https://jenkins-updates.cloudbees.com/update-center/envelope-core-cm"
-export CB_DOCKER_IMAGE="cloudbees/cloudbees-core-cm"
-```
-
-## TODO
-
-- [x] Generate the updated `plugins.yaml` file that includes the additional transitive dependencies.
-- [x] Put in some examples
-- [x] Consider parameterizing the CI_VERSION. This would require checking the version of the war/UC that is cached and potentially invalidating those artifacts prior to running.
-- [x] Put time into a PR for PIMT that allows it to have structured output to avoid the use of `sed` in processing its output.
-- [x] Update the README to reflect the new script functionality.
-- [x] Add the ability to create a `plugin-catalog.yaml` for an air-gapped installation.

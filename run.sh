@@ -4,14 +4,14 @@ set -euo pipefail
 
 # Initialize our own variables:
 ADD_TS="${ADD_TS:-0}"
-CHECK_CVES=1
+CHECK_CVES="${CHECK_CVES:-0}"
 PLUGIN_SOURCE="${PLUGIN_SOURCE:-all}"
-INCLUDE_BOOTSTRAP=0
-INCLUDE_OPTIONAL=0
-DOWNLOAD=0
-VERBOSE_LOG=0
-REFRESH_UC=0
-REFRESH_UC_MINUTES=360 # 6 hours
+INCLUDE_BOOTSTRAP="${INCLUDE_BOOTSTRAP:-0}"
+INCLUDE_OPTIONAL="${INCLUDE_OPTIONAL:-0}"
+DOWNLOAD="${DOWNLOAD:-0}"
+VERBOSE_LOG="${VERBOSE_LOG:-0}"
+REFRESH_UC="${REFRESH_UC:-0}"
+REFRESH_UC_MINUTES="${REFRESH_UC_MINUTES:-360}" # 6 hours
 SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY="${SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY:-0}"
 MINIMAL_PLUGIN_LIST="${MINIMAL_PLUGIN_LIST:-0}"
 DEDUPLICATE_PLUGINS="${DEDUPLICATE_PLUGINS:-0}"
@@ -21,7 +21,7 @@ PLUGIN_YAML_PATHS_FILES=()
 PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=''
-PLUGIN_YAML_COMMENTS_STYLE=line
+PLUGIN_YAML_COMMENTS_STYLE="${PLUGIN_YAML_COMMENTS_STYLE:-line}"
 CURRENT_DIR=$(pwd)
 TARGET_BASE_DIR="${TARGET_BASE_DIR:="${CURRENT_DIR}/target"}"
 CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
@@ -73,7 +73,7 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
                     defaults to '$PLUGIN_YAML_COMMENTS_STYLE'
     -A          Use 'src' plugins as the source list when calculating dependencies.
     -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
-    -S          Disable CVE check against plugins (added to metadata)
+    -S          Enable CVE check against plugins (added to metadata)
 
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
@@ -96,48 +96,69 @@ while getopts AiIhv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
             show_help
             exit 0
             ;;
-        v)  CI_VERSION=$OPTARG
+        v)
+            CI_VERSION=$OPTARG
             ;;
-        t)  CI_TYPE=$OPTARG
+        t)
+            CI_TYPE=$OPTARG
             ;;
-        V)  VERBOSE_LOG=1
+        V)
+            VERBOSE_LOG=1
             ;;
-        d)  DOWNLOAD=1
+        d)
+            DOWNLOAD=1
             ;;
-        D)  PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
+        D)
+            PLUGIN_CATALOG_OFFLINE_URL_BASE=$OPTARG
             ;;
-        e)  PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
+        e)
+            PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
-        f)  PLUGIN_YAML_PATHS_FILES["$PLUGIN_YAML_PATHS_IDX"]=$OPTARG
+        f)
+            PLUGIN_YAML_PATHS_FILES["$PLUGIN_YAML_PATHS_IDX"]=$OPTARG
             PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
-        F)  FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
+        F)
+            FINAL_TARGET_PLUGIN_YAML_PATH=$OPTARG
             ;;
-        g)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN=$OPTARG
+        g)
+            FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN=$OPTARG
             ;;
-        G)  FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL=$OPTARG
+        G)
+            FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL=$OPTARG
             ;;
-        c)  FINAL_TARGET_PLUGIN_CATALOG=$OPTARG
+        c)
+            FINAL_TARGET_PLUGIN_CATALOG=$OPTARG
             ;;
-        C)  FINAL_TARGET_PLUGIN_CATALOG_OFFLINE=$OPTARG
+        C)
+            FINAL_TARGET_PLUGIN_CATALOG_OFFLINE=$OPTARG
             ;;
-        i)  INCLUDE_OPTIONAL=1
+        i)
+            INCLUDE_OPTIONAL=1
             ;;
-        I)  INCLUDE_BOOTSTRAP=1
+        I)
+            INCLUDE_BOOTSTRAP=1
             ;;
-        m)  PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
+        m)
+            PLUGIN_YAML_COMMENTS_STYLE=$OPTARG
             ;;
-        M)  DEDUPLICATE_PLUGINS=1
+        M)
+            DEDUPLICATE_PLUGINS=1
             ;;
-        N)  SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY=1
+        N)
+            SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY=1
             ;;
-        R)  REFRESH_UC=1
+        R)
+            REFRESH_UC=1
             ;;
-        A)  PLUGIN_SOURCE=src
+        A)
+            PLUGIN_SOURCE=src
             ;;
-        s)  MINIMAL_PLUGIN_LIST=1
+        s)
+            MINIMAL_PLUGIN_LIST=1
             ;;
-        S)  CHECK_CVES=0
+        S)
+            CHECK_CVES=1
             ;;
         *)
             show_help >&2
@@ -149,7 +170,7 @@ shift "$((OPTIND-1))"   # Discard the options and sentinel --
 
 # debug
 debug() {
-  [ $VERBOSE_LOG -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $*" 1>&2
+  [ "$VERBOSE_LOG" -eq 0 ] || cat <<< "$(timestampMe)DEBUG: $*" 1>&2
 }
 
 timestampMe() {
@@ -180,7 +201,7 @@ downloadUpdateCenter() {
   local -r UC_FILE=$1
   local -r UC_DIR=$2
   local -r UC_URL=$3
-  if [ "$(find "$UC_FILE" -mmin -"$REFRESH_UC_MINUTES")" ] && [ $REFRESH_UC -eq 0 ]; then
+  if [ "$(find "$UC_FILE" -mmin -"$REFRESH_UC_MINUTES")" ] && [ "$REFRESH_UC" -eq 0 ]; then
     info "$(basename "${UC_FILE}") is less than $REFRESH_UC_MINUTES minutes old. You can remove it or use the '-R' flag to refresh the cache." >&2
     return 1
   else
@@ -195,7 +216,7 @@ cacheUpdateCenter() {
   #download update-center.json file and cache it
   downloadUpdateCenter "$CB_UPDATE_CENTER_CACHE_FILE" "$CB_UPDATE_CENTER_CACHE_DIR" "$CB_UPDATE_CENTER_URL_WITH_VERSION" || true
 
-  [ $CHECK_CVES -eq 1 ] || return 0
+  [ "$CHECK_CVES" -eq 1 ] || return 0
   #download update-center.actual.json file and cache it
   if downloadUpdateCenter "$CB_UPDATE_CENTER_ACTUAL" "$CB_UPDATE_CENTER_ACTUAL_CACHE_DIR" "$JENKINS_UC_ACTUAL_URL"; then
     jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
@@ -223,6 +244,8 @@ setScriptVars() {
   #adjustable vars. Will inherit from shell, but default to what you see here.
   CB_UPDATE_CENTER=${CB_UPDATE_CENTER:="https://jenkins-updates.cloudbees.com/update-center/envelope-core-${CI_TYPE}"}
   PLUGIN_CATALOG_OFFLINE_URL_BASE="${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}"
+  PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT='https://jenkins-updates.cloudbees.com/download/plugins/PNAME/PVERSION/PNAME.hpi'
+
   #calculated vars
   CB_UPDATE_CENTER_URL_WITH_VERSION="$CB_UPDATE_CENTER/update-center.json?version=$CI_VERSION"
 
@@ -252,12 +275,10 @@ setScriptVars() {
   elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -gt 1 ]; then
     PLUGIN_YAML_PATH=$(mktemp)
     info "Multiple source files passed. Creating temporary plugins.yaml file '$PLUGIN_YAML_PATH'."
-    # looping through in reverse order since the yq ireduce does not overwrite existing entries.
-    for ((i=${#PLUGIN_YAML_PATHS_FILES[@]}-1; i>=0; i--)); do
-      local currentPluginYamlPath="${PLUGIN_YAML_PATHS_FILES[$i]}"
+    # looping through and merging plugins files.
+    for currentPluginYamlPath in "${PLUGIN_YAML_PATHS_FILES[@]}"; do
       # shellcheck disable=SC2016
-      tmpStr=$(yq eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}")
-      echo "$tmpStr" > "$PLUGIN_YAML_PATH"
+      yq -i eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}"
     done
   fi
   # sanity checks
@@ -289,7 +310,6 @@ createTargetDirs() {
   TARGET_ENVELOPE_BOOTSTRAP="${TARGET_ENVELOPE}.bootstrap.txt"
   TARGET_ENVELOPE_NON_BOOTSTRAP="${TARGET_ENVELOPE}.non-bootstrap.txt"
   TARGET_ENVELOPE_ALL_CAP="${TARGET_ENVELOPE}.all.txt"
-  TARGET_ENVELOPE_ALL_CAP_WITH_VERSION="${TARGET_ENVELOPE}.all-with-version.txt"
   TARGET_PLUGIN_CATALOG="${TARGET_DIR}/plugin-catalog.yaml"
   TARGET_PLUGIN_CATALOG_OFFLINE="${TARGET_DIR}/plugin-catalog-offline.yaml"
   TARGET_PLUGINS_YAML="${TARGET_DIR}/plugins.yaml"
@@ -342,7 +362,7 @@ fillTagArray() {
     info "Looking in head comments for...$tag"
     for p in $(tagSearch="${tagSearch}" yq -r '.plugins[]|select(head_comment|capture(env(tagSearch))).id' "$PLUGIN_YAML_PATH" | sort -u); do
       comments=$(tagSearch="${tagSearch}" p=$p yq '.plugins[]|select(.id == env(p))|head_comment|match(env(tagSearch))|.string' "$PLUGIN_YAML_PATH")
-      while IFS= read -r comment; do
+            while IFS= read -r comment; do
         value="${comment//${tag}/}"
         if [ -n "$value" ]; then
           info "Setting $p (${tag}${value})"
@@ -370,8 +390,8 @@ copyOrExtractMetaInformation() {
   if ! equalPlugins; then
     if [ "$DEDUPLICATE_PLUGINS" -eq 1 ]; then
       info "Found duplicates above - removing from '$PLUGIN_YAML_PATH'."
-      deDupes=$(yq '.plugins|unique_by(.id)' "$PLUGIN_YAML_PATH") \
-        yq -i '.plugins = env(deDupes)' "$PLUGIN_YAML_PATH"
+      # now removing any duplicates
+      yq -i '.plugins |= (reverse | unique_by(.id) | sort_by(.id))' "$PLUGIN_YAML_PATH"
       equalPlugins || die "Something went wrong with the deduplication. Please check the commands used..."
     else
       die "Please use '-M' or remove the duplicate plugin above before continuing."
@@ -413,6 +433,21 @@ copyOrExtractMetaInformation() {
     TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR["$key"]="${value:=$key}"
   done < "$TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT"
 
+  # are we going to be auto-tagging src plugins?
+  CATEGORY_SRC_ONLY_AUTO_TAG=0
+  if [[ -z "${CATEGORY_SRC_ONLY_ARR[*]:-}" ]]; then
+    if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
+      info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
+      CATEGORY_SRC_ONLY_AUTO_TAG=1
+      info "Setting PLUGIN_SOURCE=all since we don't have any and want to auto tag afterwards."
+      PLUGIN_SOURCE=all
+    else
+      info "No 'src' comments found in the plugin list. Use '-s' to auto-generate comments on final list."
+    fi
+  else
+    info "Some 'src' comments found in the plugin list. Comments will be copied across BUT NOT auto-generated."
+  fi
+
   # create source list
   unset PLUGIN_SOURCE_ARR
   declare -g -A PLUGIN_SOURCE_ARR
@@ -431,28 +466,16 @@ copyOrExtractMetaInformation() {
   # let's create the source list yaml
   cp "$TARGET_PLUGINS_YAML_ORIG" "$TARGET_PLUGINS_SOURCED_YAML"
   for p in $(yq '.plugins[].id ' "$TARGET_PLUGINS_SOURCED_YAML" | xargs); do
-    [[ -n "${PLUGIN_SOURCE_ARR[$p]-}" ]] || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
+    isSourced "$p" || p=$p yq -i 'del(.plugins[] | select(.id == env(p)))' "${TARGET_PLUGINS_SOURCED_YAML}"
   done
   yq '.plugins[].id' "${TARGET_PLUGINS_SOURCED_YAML}" | sort > "${TARGET_PLUGINS_SOURCED_YAML_TXT}"
-  # are we going to be auto-tagging src plugins?
-  CATEGORY_SRC_ONLY_AUTO_TAG=0
-  if [[ -z "${CATEGORY_SRC_ONLY_ARR[*]:-}" ]]; then
-    if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
-      info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
-      CATEGORY_SRC_ONLY_AUTO_TAG=1
-    else
-      info "No 'src' comments found in the plugin list. Use '-s' to auto-generate comments on final list."
-    fi
-  else
-    info "Some 'src' comments found in the plugin list. Comments will be copied across BUT NOT auto-generated."
-  fi
 
   info "Sanity checking '$PLUGIN_YAML_PATH' for missing custom requirements."
   local missingRequirements=
   for p in "${!ANNOTATION_CUSTOM_REQUIRES_PREFIX_ARR[@]}"; do
     for req in ${ANNOTATION_CUSTOM_REQUIRES_PREFIX_ARR[$p]}; do
-      if ! isListed "$req"; then
-        warn "Missing custom requirement '$req' (required by '$p')"
+      if ! isSourced "$req"; then
+        warn "Missing custom requirement '$req' (required by '$p'). Please add the 'src' to ensure it is included."
         missingRequirements=1
       fi
     done
@@ -480,8 +503,6 @@ copyOrExtractMetaInformation() {
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_NON_BOOTSTRAP}"
   jq -r '.plugins[]|select(.scope|test("(bootstrap|fat)"))|.artifactId' \
     "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_ALL_CAP}"
-  jq -r '.plugins[]|"\(.artifactId):\(.version)"' \
-    "${TARGET_ENVELOPE}" | sort > "${TARGET_ENVELOPE_ALL_CAP_WITH_VERSION}"
 
   # create some info lists from the online update-center
   jq -r '.plugins[]|.name' \
@@ -631,6 +652,10 @@ isListed() {
   [[ -n "${TARGET_PLUGINS_YAML_ORIG_SANITIZED_TXT_ARR[$1]-}" ]]
 }
 
+isSourced() {
+  [[ -n "${PLUGIN_SOURCE_ARR[$1]-}" ]]
+}
+
 needsSourceTag() {
   [[ -n "${CATEGORY_SRC_ONLY_ARR[$1]-}" ]]
 }
@@ -644,7 +669,7 @@ isDeprecatedPlugin() {
 }
 
 isNotAffectedByCVE() {
-  if [ $CHECK_CVES -eq 1 ]; then
+  if [ "$CHECK_CVES" -eq 1 ]; then
     # if no CVEs at all for plugin, return 0
     if ! grep -qE "^${1}$" "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"; then
       return 0
@@ -780,7 +805,7 @@ processDeps() {
     debug "${indent}Plugin: $p"
     # bootstrap plugins
     if isBootstrapPlugin "$p"; then
-      if [ $INCLUDE_BOOTSTRAP -eq 1 ]; then
+      if [ "$INCLUDE_BOOTSTRAP" -eq 1 ]; then
         debug "${indent}Result - add bootstrap: $p"
         TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
       else
@@ -834,7 +859,7 @@ processAllDeps() {
   declare -g -A TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR
 
   # optional deps?
-  [ $INCLUDE_OPTIONAL -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
+  [ "$INCLUDE_OPTIONAL" -eq 1 ] && DEPS_FILES="$TARGET_REQUIRED_DEPS $TARGET_OPTIONAL_DEPS" || DEPS_FILES="$TARGET_REQUIRED_DEPS"
 
   # process deps
   local p=
@@ -903,17 +928,21 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   local customVersion customUrl
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
-    # accounting for custom plugins
-    customVersion="${ANNOTATION_CUSTOM_VERSION_PREFIX_ARR[$pluginName]-}"
-    customUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$pluginName]-}"
-    if [ -n "$customVersion" ]; then
-      addEntry "$pluginName" "version" "$customVersion" "$targetFile"
-    elif [ -n "$customUrl" ]; then
-      addEntry "$pluginName" "url" "$customUrl" "$targetFile"
+    if isSourced "$pluginName"; then
+      # accounting for custom plugins
+      customVersion="${ANNOTATION_CUSTOM_VERSION_PREFIX_ARR[$pluginName]-}"
+      customUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$pluginName]-}"
+      if [ -n "$customVersion" ]; then
+        addEntry "$pluginName" "version" "$customVersion" "$targetFile"
+      elif [ -n "$customUrl" ]; then
+        addEntry "$pluginName" "url" "$customUrl" "$targetFile"
+      fi
+    else
+      warn "Found plugin '${pluginName}' with custom annotation but no 'src' tag."
     fi
   done
   # Now the other non-cap plugins
@@ -930,7 +959,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
-  yq -i '. = { "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
     # accounting for custom plugins
@@ -939,8 +968,14 @@ createPluginCatalogAndPluginsYaml() {
     if [ -n "$customUrl" ]; then
       addEntry "$pluginName" "url" "$customUrl" "$targetFile"
     else
-      warn "Custom plugin found without a custom url. Falling back to PLUGIN_CATALOG_OFFLINE_URL_BASE"
-      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+      warn "Custom plugin found without a custom url."
+      if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
+        warn "Using provided PLUGIN_CATALOG_OFFLINE_URL_BASE"
+        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+      else
+        warn "No PLUGIN_CATALOG_OFFLINE_URL_BASE provided. Using one based on the UC url (PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT)."
+        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+      fi
       addEntry "$pluginName" "url" "$pluginUrl" "$targetFile"
     fi
   done
@@ -962,7 +997,7 @@ createPluginCatalogAndPluginsYaml() {
     # if the plugins were downloaded, copy and create an offline plugin catalog
     # TODO - do we want to support downloading custom plugins? It would get even messier than now.
     pluginDest=
-    if [ $DOWNLOAD -eq 1 ]; then
+    if [ "$DOWNLOAD" -eq 1 ]; then
       pluginDest="${PLUGINS_CACHE_DIR}/${pluginName}/${pluginVersion}/${pluginUrlOfficial//*\//}"
       # Copy to cache...
       mkdir -p "$(dirname "${pluginDest}")"
@@ -1027,8 +1062,7 @@ createPluginCatalogAndPluginsYaml() {
   # Add metadata comments
   info "Adding metadata comments..."
   # Header...
-  read -r -d '' HEADER <<EOF || true # needed because read returns 1 on stopping
-This file is automatically generated - please do not edit manually.
+  HEADER="This file is automatically generated - please do not edit manually.
 
 Annotations (given as a comment above the plugin in question):
  ${ANNOTATION_CUSTOM_VERSION_PREFIX}...    - set a custom version (e.g. 1.0)
@@ -1042,10 +1076,13 @@ Plugin Categories:
  cve - are there open security issues?
  bst - installed by default
  dep - installed as dependency
- lst - installed because it was listed
  src - used as a source plugin for this list
-EOF
-
+"
+  # yq v4.4x no longer adds a new line between header and doc
+  if [[ "$(yq --version)" =~ v4\.4 ]]; then
+    HEADER="${HEADER}
+"
+  fi
   case "${PLUGIN_YAML_COMMENTS_STYLE}" in
       line)
         HEADER="$HEADER" yq -i '. head_comment=strenv(HEADER)' "$TARGET_PLUGINS_YAML"
@@ -1066,13 +1103,12 @@ EOF
     debug "Adding comments for plugin '$p'"
     export pStr=""
     isCapPlugin "$p" && pStr="${pStr} cap" || pStr="${pStr} 3rd"
-    isListed "$p" && pStr="${pStr} lst"
     isBootstrapPlugin "$p" && pStr="${pStr} bst"
     isDependency "$p" && { pStr="${pStr} dep"; ALL_DEPS_ARR["$p"]="$p"; }
     isDeprecatedPlugin "$p" && pStr="${pStr} old"
     isNotAffectedByCVE "$p" || pStr="${pStr} cve"
     needsSourceTag "$p" && pStr="${pStr} src"
-    if [[ "$pStr" =~ cap\ lst.*dep ]] && isCandidateForRemoval "$p"; then
+    if [[ "$pStr" =~ cap\ .*dep ]] && isCandidateForRemoval "$p"; then
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
     elif [[ "$pStr" =~ bst ]]; then
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
@@ -1201,8 +1237,12 @@ reducePluginList() {
           for childToRemove in $(getChildren "$parentToCheck"); do
             if grep -qE "^($childToRemove)$" <<< "$reducedPluginList"; then
               if isCandidateForRemoval "$childToRemove"; then
-                debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
-                removeFromReduceList "$childToRemove"
+                if needsSourceTag "$childToRemove"; then
+                  debug "Keeping child '$childToRemove' in main list due to having the src tag (although could be deleted due to parent $parentToCheck)..."
+                else
+                  debug "Removing child '$childToRemove' from main list due to parent $parentToCheck..."
+                  removeFromReduceList "$childToRemove"
+                fi
               else
                 debug "Keeping child '$childToRemove' in main list due to having 3rd party parents somewhere..."
               fi
