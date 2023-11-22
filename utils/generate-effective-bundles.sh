@@ -229,17 +229,15 @@ replacePluginCatalog() {
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
     finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
-    local checkSumPluginsFilesExpected=''
-    local checkSumPluginsFilesActual=''
     local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
-    local PLUGINS_MD5SUM_CMD=("yq" "--no-doc" ".plugins")
+    local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
     while IFS= read -r -d '' f; do
-        PLUGINS_MD5SUM_CMD+=("$f")
+        PLUGINS_LIST_CMD+=("$f")
         DEP_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$bundleDir")
 
     # do we even have plugins files?
-    if [ "yq --no-doc .plugins" == "${PLUGINS_MD5SUM_CMD[*]}" ]; then
+    if [ "yq --no-doc .plugins" == "${PLUGINS_LIST_CMD[*]}" ]; then
         echo "No plugins yaml files found.}"
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
@@ -252,19 +250,25 @@ replacePluginCatalog() {
     # - unique list of plugins from all files
     # - comments should be preserved so that last comment stays (important for custom tags)
     # - see the bottom of this script for an example
-    local checkSumPlugins=''
-    checkSumPlugins=$("${PLUGINS_MD5SUM_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false | md5sum | cut -d' ' -f 1)
-    checkSumPluginsFilesExpected="${CI_VERSION}-${checkSumPlugins}"
+    local checkSumEffectivePlugins=''
+    local checkSumPluginsExpected=''
+    local checkSumPluginsActual=''
+    checkSumEffectivePlugins=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false | md5sum | cut -d' ' -f 1)
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
-        checkSumPluginsFilesActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
+        local checkSumFullActual=''
+        checkSumFullActual=$(yq '.version' "$finalPluginCatalogYaml")
+        checkSumPluginsActual="${checkSumFullActual%-*}"
     fi
+    checkSumPluginsExpected="${CI_VERSION//\./-}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
     local localDryRun="${DRY_RUN}"
     echo ""
-    echo "AUTO_UPDATE_CATALOG - Checking plugin files checksum 'actual: $checkSumPluginsFilesActual' vs 'expected: $checkSumPluginsFilesExpected'"
-    if [ "$checkSumPluginsFilesActual" != "$checkSumPluginsFilesExpected" ]; then
-        if [ -z "$checkSumPluginsFilesActual" ]; then
+    echo "AUTO_UPDATE_CATALOG - Plugin catalog version has the format <CI_VERSION_DASHES>-<EFFECTIVE_PLUGINS_MD5SUM>-<CATALOG_INCLUDE_PLUGINS_MD5SUM>"
+    echo ""
+    echo "AUTO_UPDATE_CATALOG - Checking effective plugins checksum 'actual: $checkSumPluginsActual' vs 'expected: $checkSumPluginsExpected'"
+    if [ "$checkSumPluginsActual" != "$checkSumPluginsExpected" ]; then
+        if [ -z "$checkSumPluginsActual" ]; then
             echo "AUTO_UPDATE_CATALOG - no current plugin catalog found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
             localDryRun=0
         elif [ "$AUTO_UPDATE_CATALOG" -eq 0 ] && [ "$DRY_RUN" -eq 1 ]; then
@@ -281,7 +285,9 @@ replacePluginCatalog() {
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         "${DEP_TOOL_CMD[@]}"
         # reset head_comment to new checksum
-        csum="PLUGIN_FILES_CHECKSUM=$checkSumPluginsFilesExpected" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
+        local checkSumIncludePlugins=''
+        checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
+        csum="${checkSumPluginsExpected}-${checkSumIncludePlugins}" yq -i '.version=env(csum)' "${finalPluginCatalogYaml}"
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
