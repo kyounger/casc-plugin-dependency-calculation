@@ -7,10 +7,12 @@
 - [Scripts and example files](#scripts-and-example-files)
 - [Filtering](#filtering)
 - [Debugging](#debugging)
+- [Integration with pre-commit](#integration-with-pre-commit)
 - [TLDR Walkthrough](#tldr-walkthrough)
   - [Setup](#setup)
   - [Using `plugins` to sanitize plugins files](#using-plugins-to-sanitize-plugins-files)
   - [Using `generate` to create effective bundles](#using-generate-to-create-effective-bundles)
+  - [The plugin catalog versioning explained](#the-plugin-catalog-versioning-explained)
   - [The `AUTO_UPDATE_CATALOG` explained](#the-auto_update_catalog-explained)
   - [The `plugins` command explained](#the-plugins-command-explained)
     - [What does the command do?](#what-does-the-command-do)
@@ -47,6 +49,7 @@ The scripts used here are:
     - `plugins`: used to create the minimal set of plugins for your bundles
     - `generate`: used to create the effective bundles
     - `all`: running both plugins and then generate
+    - `force`: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
     - `pre-commit`: can be used in combination with [pre-commit](https://pre-commit.com/) to avoid unwanted mistakes in commits
 
 The directories in this example are:
@@ -75,6 +78,12 @@ The following scenarios can be achieved:
 Running with `DEBUG=1` will output additional information.
 
 If even more detailed information is needed, you can also revert to using `bash -x ...`
+
+## Integration with pre-commit
+
+Stop making inadvertent mistakes.
+
+See [integration with pre-commit](../integrate-with-pre-commit/README.md) for more details.
 
 ## TLDR Walkthrough
 
@@ -267,6 +276,10 @@ variables:
   - variables.1.controller-c.variables.yaml
 Done
 ```
+
+### The plugin catalog versioning explained
+
+Please see [](../catalog-version-explained/README.md) for more details on how the version of the plugin catalog is calculated.
 
 ### The `AUTO_UPDATE_CATALOG` explained
 

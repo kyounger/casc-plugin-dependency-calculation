@@ -325,6 +325,8 @@ plugins() {
             echo "Running... ${DEP_TOOL_CMD[*]}"
             if [ "$DRY_RUN" -eq 0 ] || [ "$AUTO_UPDATE_CATALOG" -eq 1 ]; then
                 "${DEP_TOOL_CMD[@]}"
+                # if we run the 'force' command, we still only want to download the UC once per call
+                REFRESH_UC=0
             else
                 echo "Set DRY_RUN=0 or AUTO_UPDATE_CATALOG=1 to execute."
             fi
@@ -383,6 +385,13 @@ case $ACTION in
         shift
         plugins "${@}"
         ;;
+    force)
+        export DRY_RUN=0 REFRESH_UC=1
+        processVars
+        shift
+        plugins "${@}"
+        generate "${@}"
+        ;;
     all)
         processVars
         shift
@@ -390,7 +399,12 @@ case $ACTION in
         generate "${@}"
         ;;
     *)
-        die "Unknown action '$ACTION' (actions are: pre-commit, generate, plugins, all)"
+        die "Unknown action '$ACTION' (actions are: pre-commit, generate, plugins, all, force)
+    - plugins: used to create the minimal set of plugins for your bundles
+    - generate: used to create the effective bundles
+    - all: running both plugins and then generate
+    - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
+    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits"
         ;;
 esac
 echo "Done"
