@@ -204,7 +204,7 @@ generate() {
         # add description to the effective bundles
         bp=" (version: $CI_VERSION, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
         # remove the parent and availabilityPattern from the effective bundles
-        yq -i 'del(.parent)' "${targetBundleYaml}"
+        yq -i 'del(.parent)|del(.availabilityPattern)' "${targetBundleYaml}"
         # reinstate the checksum of bundle files to provide unique version which does change with git
         checkSum=$(cd "${targetDir}" && find . -type f -exec md5sum {} + | LC_ALL=C sort | md5sum | cut -d' ' -f 1)
         c=$checkSum yq -i '.version = env(c)' "${targetBundleYaml}"
@@ -257,7 +257,7 @@ replacePluginCatalog() {
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
         local checkSumFullActual=''
-        checkSumFullActual=$(yq '.version' "$finalPluginCatalogYaml")
+        checkSumFullActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
         checkSumPluginsActual="${checkSumFullActual%-*}"
     fi
     checkSumPluginsExpected="${CI_VERSION//\./-}-${checkSumEffectivePlugins}"
@@ -287,7 +287,7 @@ replacePluginCatalog() {
         # reset head_comment to new checksum
         local checkSumIncludePlugins=''
         checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
-        csum="${checkSumPluginsExpected}-${checkSumIncludePlugins}" yq -i '.version=env(csum)' "${finalPluginCatalogYaml}"
+        csum="CHECKSUM_PLUGIN_FILES=${checkSumPluginsExpected}-${checkSumIncludePlugins}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
