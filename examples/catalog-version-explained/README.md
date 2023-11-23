@@ -16,9 +16,18 @@ When validating a bundle, one of the important things is to ensure the target ma
 - the same set of plugins
 - in the same versions
 
-This is where the plugin catalog version may prove useful. It can be seen as a unique identifier for the expected set of 3rd party plugins and dependencies.
+This is where the version comment in the plugin catalog may prove useful. Prefixed with `CHECKSUM_PLUGIN_FILES=`, it can be seen as a unique identifier for the expected set of 3rd party plugins and dependencies.
 
 It is already used internally by the script to determine whether to update a particular plugin catalog.
+
+```mono
+❯ cat effective-bundles/controller-test/catalog.plugin-catalog.yaml
+# CHECKSUM_PLUGIN_FILES=2-401-2-6-3463125b1438df855aaad9f12814f473-dbbca657af13497964cbbb579136ed2c
+type: "plugin-catalog"
+version: "1"
+...
+...
+```
 
 ## The Format
 

@@ -8,16 +8,19 @@
 - [Filtering](#filtering)
 - [Debugging](#debugging)
 - [Integration with pre-commit](#integration-with-pre-commit)
+- [Automatic detection of the `CI_VERSION`](#automatic-detection-of-the-ci_version)
 - [TLDR Walkthrough](#tldr-walkthrough)
   - [Setup](#setup)
   - [Using `plugins` to sanitize plugins files](#using-plugins-to-sanitize-plugins-files)
   - [Using `generate` to create effective bundles](#using-generate-to-create-effective-bundles)
   - [The plugin catalog versioning explained](#the-plugin-catalog-versioning-explained)
-  - [The `AUTO_UPDATE_CATALOG` explained](#the-auto_update_catalog-explained)
+  - [The `AUTO_UPDATE_CATALOG` feature explained](#the-auto_update_catalog-feature-explained)
   - [The `plugins` command explained](#the-plugins-command-explained)
     - [What does the command do?](#what-does-the-command-do)
   - [The `generate` command explained](#the-generate-command-explained)
     - [What does the plugin-catalog command do?](#what-does-the-plugin-catalog-command-do)
+  - [The `all` command explained](#the-all-command-explained)
+  - [The `force` command explained](#the-force-command-explained)
   - [Unique Bundle Version Per Effective Bundle](#unique-bundle-version-per-effective-bundle)
   - [Overwriting versions/URLs of custom plugins](#overwriting-versionsurls-of-custom-plugins)
 - [PRO TIP: Use `raw.bundle.yaml`](#pro-tip-use-rawbundleyaml)
@@ -70,8 +73,8 @@ cascgen <ACTION> <BUNDLE_FILTER>
 
 The following scenarios can be achieved:
 
-- `cascgen <ACTION>` - all bundles in all versions
-- `cascgen <ACTION> controller-c` - `controller-c` and children only
+- `cascgen <ACTION>` - all bundles
+- `cascgen <ACTION> controller-c` - `controller-c` and child bundles, if any
 
 ## Debugging
 
@@ -81,13 +84,29 @@ If even more detailed information is needed, you can also revert to using `bash 
 
 ## Integration with pre-commit
 
-Stop making inadvertent mistakes.
+Stop making inadvertent mistakes. See [integration with pre-commit](../integrate-with-pre-commit/README.md) for more details.
 
-See [integration with pre-commit](../integrate-with-pre-commit/README.md) for more details.
+## Automatic detection of the `CI_VERSION`
+
+The `CI_VERSION` is determined in order by one of the following things (see the `determineCIVersion` method for more details):
+
+- the `CI_VERSION` environment variable.
+- the parent directory of the `RAW_DIR` (according to the `CI_DETECTION_PATTERN` which defaults to `vX.X.X.X`)
+- the `GIT_BRANCH` environment variable.
+- the git branch name using the git command (if available).
 
 ## TLDR Walkthrough
 
-Navigate into this directory and start the container.
+Navigate into this directory and start the local container using the commands found on the [main page](../../README.md).
+
+```sh
+❯ docker build -t casc-plugin-dependency-calculation:v1 -f Containerfile .
+
+❯ cd examples/workflow-generating-effective-bundles
+
+❯ docker run -v $(pwd):$(pwd) -w $(pwd) --rm -it casc-plugin-dependency-calculation:v1 bash
+
+```
 
 ### Setup
 
@@ -105,10 +124,15 @@ drwxrwxr-x    6 casc-use casc-use      4096 Nov 21 13:06 raw-bundles-original
 
 Running the command tells us what our options are:
 
-```sh
+```mono
 $ cascgen
 Looking for action ''
-Unknown action '' (actions are: pre-commit, generate, plugins, all)
+Unknown action '' (actions are: pre-commit, generate, plugins, all, force)
+    - plugins: used to create the minimal set of plugins for your bundles
+    - generate: used to create the effective bundles
+    - all: running both plugins and then generate
+    - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
+    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
 ```
 
 Let's run the plugins command
@@ -120,7 +144,7 @@ Setting some vars...
 RAW_DIR '/workspace/workflow-generating-effective-bundles/raw-bundles' is not a directory
 ```
 
-Oh, the raw-bundles die hasn't been created. Let's copy the original...
+Oh, wait, the raw-bundles dir hasn't been created. Let's copy the original...
 
 ```sh
 $ cp -r raw-bundles-original raw-bundles
@@ -130,7 +154,7 @@ Setting some vars...
 EFFECTIVE_DIR '/workspace/workflow-generating-effective-bundles/effective-bundles'  is not a directory
 ```
 
-Now the effective-bundles dir...
+Create the effective-bundles dir and export the `CI_VERSION` since it is cannot be automatically detected in this example...
 
 ```sh
 $ mkdir effective-bundles
@@ -171,7 +195,9 @@ Files raw-bundles/controller-a/plugins.yaml and raw-bundles-original/controller-
 Files raw-bundles/controller-c/plugins.yaml and raw-bundles-original/controller-c/plugins.yaml differ
 ```
 
-Taking a closer look at one of the `plugins.yaml` we see the file has been sanitised. This form of 'sanitising' is explained in the [standard-workflow-steps](../workflow-standard-steps/README.md)
+Taking a closer look at one of the `plugins.yaml` we see the file has been sanitised.
+
+This form of 'sanitising' is explained in the [standard-workflow-steps](../workflow-standard-steps/README.md)
 
 ```sh
 $ diff raw-bundles-original/controller-c/plugins.yaml raw-bundles/controller-c/plugins.yaml
@@ -279,9 +305,9 @@ Done
 
 ### The plugin catalog versioning explained
 
-Please see [](../catalog-version-explained/README.md) for more details on how the version of the plugin catalog is calculated.
+Please see [catalog version explained](../catalog-version-explained/README.md) for more details on how the version of the plugin catalog is calculated.
 
-### The `AUTO_UPDATE_CATALOG` explained
+### The `AUTO_UPDATE_CATALOG` feature explained
 
 The `AUTO_UPDATE_CATALOG` is a feature which automatically detects changes in a bundles plugins and "automatically" recreates the associated plugin catalog.
 
@@ -311,7 +337,7 @@ AUTO_UPDATE_CATALOG - Checking plugin files checksum 'actual: 2.401.2.3-62a294ab
 AUTO_UPDATE_CATALOG - differences in plugins found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)...
 ```
 
-Here upon updating the CI_VERSION
+Here upon updating the `CI_VERSION`
 
 ```sh
 AUTO_UPDATE_CATALOG - Checking plugin files checksum 'actual: 2.401.2.3-62a294abe449b334cd474ee07c0c69f0' vs 'expected: 2.401.3.3-62a294abe449b334cd474ee07c0c69f0'
@@ -390,6 +416,14 @@ What this commands says is:
 - `-v`: for version 2.401.2.3
 - `-f`: using `xxxxx` as an input list (**NOTE:** the order is the inheritance order of `base` -> `bundle-a` -> `controller-a`)
 - `-c`: copy the resulting plugin catalog to `effective-bundles/2.401.2.3-controller-c/catalog/plugin-catalog.yaml` (previous files will be removed)
+
+### The `all` command explained
+
+This is the same as calling `plugins` and `generate`
+
+### The `force` command explained
+
+This is the same as calling `all`. However, the update center will be downloaded afresh and everything will be recreated, regardless of the `CHECKSUM_PLUGIN_FILES`, etc.
 
 ### Unique Bundle Version Per Effective Bundle
 
