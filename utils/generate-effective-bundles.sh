@@ -14,6 +14,10 @@ PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 # assuming some variables - can be overwritten
 EFFECTIVE_DIR="${EFFECTIVE_DIR:-"${PWD}/effective-bundles"}"
 RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
+VALIDATIONS_DIR="${VALIDATIONS_DIR:-"${PWD}/validation-bundles"}"
+VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX:-val-}"
+VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
+CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
 export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${PWD}/target"}"
 export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
 
@@ -21,7 +25,8 @@ export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
 # version detection (detected in the following order):
 # - name of parent directory of RAW_DIR
 # - name of current git branch (if git on PATH)
-CI_DETECTION_PATTERN="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
+CI_DETECTION_PATTERN_DEFAULT="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
+CI_DETECTION_PATTERN="${CI_DETECTION_PATTERN:-"${CI_DETECTION_PATTERN_DEFAULT}"}"
 CI_TEST_PATTERN="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]"
 
 # find the DEP_TOOL location (found as cascdeps in the docker image)
@@ -220,6 +225,7 @@ generate() {
         echo "INFO: Resulting bundle.yaml"
         yq . "${targetBundleYaml}"
     done < <(listBundleYamlsIn "$RAW_DIR")
+    cleanupUnusedBundles
 }
 
 replacePluginCatalog() {
@@ -252,11 +258,13 @@ replacePluginCatalog() {
     # - see the bottom of this script for an example
     local checkSumEffectivePlugins=''
     local checkSumPluginsExpected=''
+    local checkSumFullActual=''
     local checkSumPluginsActual=''
-    checkSumEffectivePlugins=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false | md5sum | cut -d' ' -f 1)
+    local effectivePluginsList=''
+    effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
+    checkSumEffectivePlugins=$(echo "$effectivePluginsList" | md5sum | cut -d' ' -f 1)
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
-        local checkSumFullActual=''
         checkSumFullActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
         checkSumPluginsActual="${checkSumFullActual%-*}"
     fi
@@ -286,8 +294,11 @@ replacePluginCatalog() {
         "${DEP_TOOL_CMD[@]}"
         # reset head_comment to new checksum
         local checkSumIncludePlugins=''
+        local checkSumFullExpected=''
         checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
-        csum="CHECKSUM_PLUGIN_FILES=${checkSumPluginsExpected}-${checkSumIncludePlugins}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
+        checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
+        csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
+        createValidation "$checkSumFullExpected" "$effectivePluginsList"
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
@@ -334,15 +345,65 @@ plugins() {
     done < <(listBundleYamlsIn "$RAW_DIR")
 }
 
-commitAnyChangesInEffectiveBundles() {
-    # check pristine
-    git add "$EFFECTIVE_DIR"
-    if [ -n "$(git --no-pager diff --cached --stat "$EFFECTIVE_DIR")" ]; then
-        echo 'Diffs found. Checking in...'
-        git commit -m "Applying changes to effective bundles" "$EFFECTIVE_DIR"
-        git push origin
+cleanupUnusedBundles() {
+    echo "Running clean up..."
+    # Effective
+    for d in "${EFFECTIVE_DIR}/"*; do
+        [[ -e "$d" ]] || break
+        local bundleName=''
+        bundleName=$(basename "$d")
+        if [ ! -d "${RAW_DIR}/$bundleName" ]; then
+            echo "CLEANUP - Removing unused effective bundle '${bundleName}'"
+            rm -rf "${EFFECTIVE_DIR}/${bundleName:?}"
+        fi
+    done
+    # Validations
+    for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
+        [[ -e "$d" ]] || break # break if empty
+        local bundleName=''
+        bundleName=$(basename "$d")
+        [[ "$bundleName" != "${VALIDATIONS_TEMPLATE}" ]] || continue # # skip the VALIDATIONS_TEMPLATE
+        local validationCheckSum="${bundleName//"${VALIDATIONS_BUNDLE_PREFIX}"/}"
+        echo "CLEANUP - Looking for validation checksum '$validationCheckSum'"
+        if ! grep -rq "$validationCheckSum" "${EFFECTIVE_DIR}"; then
+            echo "CLEANUP - Removing unused validation bundle '${bundleName}'"
+            rm -rf "${VALIDATIONS_DIR}/${bundleName:?}"
+        else
+            # Exists so let's add all associated effective bundles as a head comment for
+            # easier processing afterwards
+            local headerStr=''
+            while IFS= read -r f; do
+                [[ -e "$f" ]] || break
+                local associatedBundleName=''
+                associatedBundleName=$(basename "$(dirname "$f")")
+                echo "Adding associated bundle '$associatedBundleName'"
+                headerStr=$(printf '%s\n' "$associatedBundleName")
+            done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
+            headerStr="${headerStr}" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
+        fi
+    done
+}
+
+createValidation() {
+    local checkSumFullExpected=$1
+    local effectivePluginsList=$2
+    # validation bundles - we are assuming there is only 1 x plugins.yaml, 1 x plugin-catalog.yaml
+    local validationBundle="${VALIDATIONS_BUNDLE_PREFIX}${checkSumFullExpected}"
+    local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
+    if [ -d "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" ]; then
+        echo "VALIDATION BUNDLES - Checking bundle '$validationBundle'"
+        if [ ! -d "${validationDir}" ]; then
+            echo "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
+            rm -rf "${validationDir}"
+            cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
+            touch "${validationDir}/plugins.yaml"
+            pl="$effectivePluginsList" yq -i '.plugins = env(pl)' "${validationDir}/plugins.yaml"
+            cp -r "${finalPluginCatalogYaml}" "${validationDir}/plugin-catalog.yaml"
+        else
+            echo "VALIDATION BUNDLES - Existing bundle '$validationBundle' found."
+        fi
     else
-        echo 'No diff found. Ignoring...'
+        echo "VALIDATION BUNDLES - No validation template found so not creating for '$validationBundle'."
     fi
 }
 
@@ -374,6 +435,14 @@ case $ACTION in
             die "Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
         [ -z "$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)" ] || \
             die "Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        # optional validation bundles
+        if [ -d "validation-bundles" ]; then
+            # fail if non-cached diffs found in effective bundles
+            [ -z "$(git --no-pager diff --stat "$VALIDATIONS_DIR")" ] || \
+                die "Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            [ -z "$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)" ] || \
+                die "Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        fi
         ;;
     generate)
         processVars
