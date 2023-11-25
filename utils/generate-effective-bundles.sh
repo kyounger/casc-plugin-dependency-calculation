@@ -21,6 +21,12 @@ CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
 export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${PWD}/target"}"
 export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
 
+# optional kustomization.yaml creation
+KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
+if [ -f "${KUSTOMIZATION_YAML}" ]; then
+    command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
+fi
+
 # CI_VERSION env var set, no detection necessary. Otherwise,
 # version detection (detected in the following order):
 # - name of parent directory of RAW_DIR
@@ -69,6 +75,8 @@ determineCIVersion() {
         echo "INFO: Setting CI_VERSION according to CI_VERSION env var."
     fi
     [[ "${CI_VERSION}" =~ $CI_TEST_PATTERN ]] || die "CI_VERSION '${CI_VERSION}' is not a valid version."
+    # set the version with dashes for later use
+    CI_VERSION_DASHES="${CI_VERSION//\./-}"
 }
 
 processVars() {
@@ -268,7 +276,7 @@ replacePluginCatalog() {
         checkSumFullActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
         checkSumPluginsActual="${checkSumFullActual%-*}"
     fi
-    checkSumPluginsExpected="${CI_VERSION//\./-}-${checkSumEffectivePlugins}"
+    checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
     local localDryRun="${DRY_RUN}"
     echo ""
@@ -346,9 +354,9 @@ plugins() {
 }
 
 cleanupUnusedBundles() {
-    echo "Running clean up..."
+    echo "Running clean up effective bundles..."
     # Effective
-    for d in "${EFFECTIVE_DIR}/"*; do
+    for d in $(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
         [[ -e "$d" ]] || break
         local bundleName=''
         bundleName=$(basename "$d")
@@ -357,31 +365,44 @@ cleanupUnusedBundles() {
             rm -rf "${EFFECTIVE_DIR}/${bundleName:?}"
         fi
     done
-    # Validations
-    for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
-        [[ -e "$d" ]] || break # break if empty
-        local bundleName=''
-        bundleName=$(basename "$d")
-        [[ "$bundleName" != "${VALIDATIONS_TEMPLATE}" ]] || continue # # skip the VALIDATIONS_TEMPLATE
-        local validationCheckSum="${bundleName//"${VALIDATIONS_BUNDLE_PREFIX}"/}"
-        echo "CLEANUP - Looking for validation checksum '$validationCheckSum'"
-        if ! grep -rq "$validationCheckSum" "${EFFECTIVE_DIR}"; then
-            echo "CLEANUP - Removing unused validation bundle '${bundleName}'"
-            rm -rf "${VALIDATIONS_DIR}/${bundleName:?}"
-        else
-            # Exists so let's add all associated effective bundles as a head comment for
-            # easier processing afterwards
-            local headerStr=''
-            while IFS= read -r f; do
-                [[ -e "$f" ]] || break
-                local associatedBundleName=''
-                associatedBundleName=$(basename "$(dirname "$f")")
-                echo "Adding associated bundle '$associatedBundleName'"
-                headerStr=$(printf '%s\n' "$associatedBundleName")
-            done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
-            headerStr="${headerStr}" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
-        fi
-    done
+    echo "Running clean up validation bundles if present..."
+    if [ -d "$VALIDATIONS_DIR" ]; then
+        # Validations
+        for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
+            [[ -e "$d" ]] || break # break if empty
+            local bundleName=''
+            bundleName=$(basename "$d")
+            [[ "$bundleName" != "${VALIDATIONS_TEMPLATE}" ]] || continue # # skip the VALIDATIONS_TEMPLATE
+            local validationCheckSum="${bundleName//"${VALIDATIONS_BUNDLE_PREFIX}"/}"
+            echo "CLEANUP - Looking for validation checksum '$validationCheckSum'"
+            if ! grep -rq "$validationCheckSum" "${EFFECTIVE_DIR}"; then
+                echo "CLEANUP - Removing unused validation bundle '${bundleName}'"
+                rm -rf "${VALIDATIONS_DIR}/${bundleName:?}"
+            else
+                # Exists so let's add all associated effective bundles as a head comment for
+                # easier processing afterwards
+                local headerStr=''
+                while IFS= read -r f; do
+                    [[ -e "$f" ]] || break
+                    local associatedBundleName=''
+                    associatedBundleName=$(basename "$(dirname "$f")")
+                    echo "Adding associated bundle '$associatedBundleName'"
+                    headerStr=$(printf '%s\n' "$associatedBundleName")
+                done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
+                headerStr="${headerStr}" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
+            fi
+        done
+    fi
+    echo "Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
+    if [ -f "${KUSTOMIZATION_YAML}" ]; then
+        echo -n > "${KUSTOMIZATION_YAML}"
+        (cd "$EFFECTIVE_DIR" && {
+            for d in $(find . -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
+                kustomize edit add configmap "${CI_VERSION_DASHES}-${d}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
+            done
+        };)
+        echo "Recreated the kustomisation.yaml"
+    fi
 }
 
 createValidation() {
