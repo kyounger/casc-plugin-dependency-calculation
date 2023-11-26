@@ -417,7 +417,7 @@ createValidation() {
     local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
     if [ -d "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" ]; then
         echo "VALIDATION BUNDLES - Checking bundle '$validationBundle'"
-        if [ ! -d "${validationDir}" ]; then
+        if [ ! -d "${validationDir}" ] || [ "$DRY_RUN" -eq 0 ]; then
             echo "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
             rm -rf "${validationDir}"
             cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
