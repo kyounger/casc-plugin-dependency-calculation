@@ -56,20 +56,27 @@ determineCIVersion() {
         versionDir=$(dirname "$RAW_DIR")
         versionDirName=$(basename "$versionDir")
         # test parent dir
+        echo "INFO: Testing CI_VERSION according to parent of RAW_DIR..."
         if [[ "$versionDirName" =~ $CI_DETECTION_PATTERN ]]; then
             echo "INFO: Setting CI_VERSION according to parent of RAW_DIR."
             CI_VERSION="${BASH_REMATCH[1]}"
-        elif [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
+        fi
+        echo "INFO: Testing CI_VERSION according to GIT_BRANCH env var..."
+        if [ -z "$CI_VERSION" ] && [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
             echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
             CI_VERSION="${BASH_REMATCH[1]}"
-        elif command -v git &> /dev/null; then
+        fi
+        echo "INFO: Testing CI_VERSION according to git branch from command..."
+        if [ -z "$CI_VERSION" ] && command -v git &> /dev/null; then
             local gitBranch=''
             gitBranch=$(git rev-parse --abbrev-ref HEAD)
             if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
                 echo "INFO: Setting CI_VERSION according to git branch from command."
                 CI_VERSION="${BASH_REMATCH[1]}"
             fi
-        elif [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
+        fi
+        echo "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
+        if [ -z "$CI_VERSION" ] && [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
             # Used in PR use cases where the CI_VERSION cannot be determined otherwise
             if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
                 local knownVersion=''
@@ -81,9 +88,10 @@ determineCIVersion() {
             else
                 echo "WARN: Multiple versions found in ${TEST_RESOURCES_CI_VERSIONS}. Not setting anything."
             fi
-        else
+        fi
+        if [ -z "$CI_VERSION" ]; then
             # we've got this without being able to find the CI_VERSION so...
-            die "Could not determine a CI_VERSION. Checked env var, RAW_DIR's parent dir, GIT_BRANCH env var, and git branch."
+            die "Could not determine a CI_VERSION."
         fi
     else
         echo "INFO: Setting CI_VERSION according to CI_VERSION env var."
