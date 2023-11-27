@@ -520,6 +520,7 @@ case $ACTION in
             fi;
             echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
             printf '%s\n\n' "$ERROR_MSGS"
+            die "Pre-commit run failed. See above."
         fi
         ;;
     generate)
