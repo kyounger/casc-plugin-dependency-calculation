@@ -394,7 +394,7 @@ cleanupUnusedBundles() {
                         headerStr=$(printf '%s\n%s' "$headerStr" "$associatedBundleName")
                     fi
                 done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
-                headerStr="${headerStr}" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
+                headerStr="$(sort <<< "${headerStr}")" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
             fi
         done
     fi
