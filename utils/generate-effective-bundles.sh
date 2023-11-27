@@ -13,6 +13,7 @@ PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # assuming some variables - can be overwritten
 TEST_RESOURCES_DIR="${TEST_RESOURCES_DIR:-"${PWD}/test-resources"}"
+TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
 EFFECTIVE_DIR="${EFFECTIVE_DIR:-"${PWD}/effective-bundles"}"
 RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
 VALIDATIONS_DIR="${VALIDATIONS_DIR:-"${PWD}/validation-bundles"}"
@@ -67,6 +68,18 @@ determineCIVersion() {
             if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
                 echo "INFO: Setting CI_VERSION according to git branch from command."
                 CI_VERSION="${BASH_REMATCH[1]}"
+            fi
+        elif [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
+            # Used in PR use cases where the CI_VERSION cannot be determined otherwise
+            if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
+                local knownVersion=''
+                knownVersion=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
+                if [[ "$knownVersion" =~ $CI_DETECTION_PATTERN ]]; then
+                    echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}."
+                    CI_VERSION="${BASH_REMATCH[1]}"
+                fi
+            else
+                echo "WARN: Multiple versions found in ${TEST_RESOURCES_CI_VERSIONS}. Not setting anything."
             fi
         else
             # we've got this without being able to find the CI_VERSION so...
@@ -451,6 +464,11 @@ createTestResources() {
             echo "Created '${testValidationDir}/${bundle}.zip'"
         done
     done
+    # Add a unique list of detected CI_VERSION values
+    yq --no-doc '.configurations[0].prerequisites.productVersion' \
+        "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*/plugin-catalog.yaml \
+        | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+        | sort -u > "${TEST_RESOURCES_CI_VERSIONS}"
 }
 
 
@@ -555,7 +573,8 @@ case $ACTION in
     - generate: used to create the effective bundles
     - all: running both plugins and then generate
     - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
-    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits"
+    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
+    - createTestResources: can be used in pipelines when vaildating bundles. creates bundle zips, list detected CI_VERSIONS, etc."
         ;;
 esac
 echo "Done"
