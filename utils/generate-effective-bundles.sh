@@ -12,6 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # assuming some variables - can be overwritten
+TEST_RESOURCES_DIR="${TEST_RESOURCES_DIR:-"${PWD}/test-resources"}"
 EFFECTIVE_DIR="${EFFECTIVE_DIR:-"${PWD}/effective-bundles"}"
 RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
 VALIDATIONS_DIR="${VALIDATIONS_DIR:-"${PWD}/validation-bundles"}"
@@ -432,6 +433,27 @@ createValidation() {
     fi
 }
 
+# TEST UTILS - FOR USE IN CI PIPELINES
+# TEST UTILS - FOR USE IN CI PIPELINES
+# TEST UTILS - FOR USE IN CI PIPELINES
+
+## Takes 1 arg (bundleName) - creates a <bundleName>.zip file in the root of WORKSPACE
+createTestResources() {
+    mkdir -p "${TEST_RESOURCES_DIR}"
+    for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
+        for bundle in $(yq '. | head_comment' "${d}/plugins.yaml"); do
+            local testValidationDir=''
+            testValidationDir="${TEST_RESOURCES_DIR}/$(basename "$d")"
+            mkdir -p "$testValidationDir"
+            cd "${EFFECTIVE_DIR}/${bundle}"
+            rm -f "${testValidationDir}/${bundle}.zip"
+            zip -r "${testValidationDir}/${bundle}.zip" .
+            echo "Created '${testValidationDir}/${bundle}.zip'"
+        done
+    done
+}
+
+
 # main
 ACTION="${1:-}"
 echo "Looking for action '$ACTION'"
@@ -445,10 +467,15 @@ case $ACTION in
         # - find changes to effective plugins directories
         # then:
         # - we need to update the plugin catalogs before checking...
+        ERROR_REPORT=''
+        ERROR_MSGS=''
         CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
         CACHED_PLUGINS_FILES=$(git diff --name-only --cached "${EFFECTIVE_DIR}"/**/plugins)
         if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
-            die "Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+            echo ""
+            errMsg="CHANGED_PLUGINS_FILES: Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS="${ERROR_MSGS}\n${errMsg}"
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_PLUGINS_FILES")
         elif [ "$DRY_RUN" -ne 0 ] && [ -n "$CACHED_PLUGINS_FILES" ]; then
             echo ""
             echo "WARNING >>>> Cached plugin files found! Reminder to please ensure you recreated the plugin catalog using DRY_RUN=0"
@@ -456,17 +483,43 @@ case $ACTION in
             echo ""
         fi
         # fail if non-cached diffs found in effective bundles
-        [ -z "$(git --no-pager diff --stat "$EFFECTIVE_DIR")" ] || \
-            die "Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-        [ -z "$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)" ] || \
-            die "Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        CHANGED_EFFECTIVE_DIR=$(git --no-pager diff --stat "$EFFECTIVE_DIR")
+        CHANGED_EFFECTIVE_DIR_FULL=$(git --no-pager diff "$EFFECTIVE_DIR")
+        if [ -n "${CHANGED_EFFECTIVE_DIR}" ]; then
+            errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
+        fi
+        UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
+        if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
+            errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
+        fi
         # optional validation bundles
-        if [ -d "validation-bundles" ]; then
-            # fail if non-cached diffs found in effective bundles
-            [ -z "$(git --no-pager diff --stat "$VALIDATIONS_DIR")" ] || \
-                die "Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-            [ -z "$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)" ] || \
-                die "Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        if [ -d "$VALIDATIONS_DIR" ]; then
+            CHANGED_VALIDATIONS_DIR=$(git --no-pager diff --stat "$VALIDATIONS_DIR")
+            CHANGED_VALIDATIONS_DIR_FULL=$(git --no-pager diff "$VALIDATIONS_DIR")
+            if [ -n "${CHANGED_VALIDATIONS_DIR}" ]; then
+                errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+                ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+                ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
+            fi
+            UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
+            if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
+                errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+                ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+                ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
+            fi
+        fi
+        if [ -n "${ERROR_MSGS}" ]; then
+            if [ "$DEBUG" -eq 1 ]; then
+                echo "SHOWING FULL $PRE_COMMIT_LOG"
+                cat "$PRE_COMMIT_LOG"
+                printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
+            fi;
+            echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
+            printf '%s\n\n' "$ERROR_MSGS"
         fi
         ;;
     generate)
@@ -491,6 +544,9 @@ case $ACTION in
         shift
         plugins "${@}"
         generate "${@}"
+        ;;
+    createTestResources) # can be used in pipelines when vaildating bundles
+        createTestResources
         ;;
     *)
         die "Unknown action '$ACTION' (actions are: pre-commit, generate, plugins, all, force)

@@ -6,6 +6,7 @@ jenkins-plugin-manager.jar
 ./plugin-catalog.yaml
 update-center.json
 target
+test-resources
 
 # used in the tests
 **/actual/*.yaml
