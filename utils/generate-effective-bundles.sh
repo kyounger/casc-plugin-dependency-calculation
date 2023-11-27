@@ -61,32 +61,38 @@ determineCIVersion() {
             echo "INFO: Setting CI_VERSION according to parent of RAW_DIR."
             CI_VERSION="${BASH_REMATCH[1]}"
         fi
-        echo "INFO: Testing CI_VERSION according to GIT_BRANCH env var..."
-        if [ -z "$CI_VERSION" ] && [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
-            echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
-            CI_VERSION="${BASH_REMATCH[1]}"
-        fi
-        echo "INFO: Testing CI_VERSION according to git branch from command..."
-        if [ -z "$CI_VERSION" ] && command -v git &> /dev/null; then
-            local gitBranch=''
-            gitBranch=$(git rev-parse --abbrev-ref HEAD)
-            if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
-                echo "INFO: Setting CI_VERSION according to git branch from command."
+        if [ -z "$CI_VERSION" ]; then
+            echo "INFO: Testing CI_VERSION according to GIT_BRANCH env var..."
+            if [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
+                echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
                 CI_VERSION="${BASH_REMATCH[1]}"
             fi
         fi
-        echo "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
-        if [ -z "$CI_VERSION" ] && [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
-            # Used in PR use cases where the CI_VERSION cannot be determined otherwise
-            if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
-                local knownVersion=''
-                knownVersion=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
-                if [[ "$knownVersion" =~ $CI_TEST_PATTERN ]]; then
-                    echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}."
+        if [ -z "$CI_VERSION" ]; then
+            echo "INFO: Testing CI_VERSION according to git branch from command..."
+            if command -v git &> /dev/null; then
+                local gitBranch=''
+                gitBranch=$(git rev-parse --abbrev-ref HEAD)
+                if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
+                    echo "INFO: Setting CI_VERSION according to git branch from command."
                     CI_VERSION="${BASH_REMATCH[1]}"
                 fi
-            else
-                echo "WARN: Multiple versions found in ${TEST_RESOURCES_CI_VERSIONS}. Not setting anything."
+            fi
+        fi
+        if [ -z "$CI_VERSION" ]; then
+            echo "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
+            if [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
+                # Used in PR use cases where the CI_VERSION cannot be determined otherwise
+                if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
+                    local knownVersion=''
+                    knownVersion=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
+                    if [[ "$knownVersion" =~ $CI_TEST_PATTERN ]]; then
+                        echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}."
+                        CI_VERSION="${BASH_REMATCH[1]}"
+                    fi
+                else
+                    echo "WARN: Multiple versions found in ${TEST_RESOURCES_CI_VERSIONS}. Not setting anything."
+                fi
             fi
         fi
         if [ -z "$CI_VERSION" ]; then
@@ -281,7 +287,12 @@ replacePluginCatalog() {
         return 0
     fi
 
-    DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+    if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
+        echo "Detected the PLUGIN_CATALOG_OFFLINE_URL_BASE variable. Using the offline catalog."
+        DEP_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
+    else
+        DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+    fi
     # this is a tricky one, but we want
     # - unique list of plugins from all files
     # - comments should be preserved so that last comment stays (important for custom tags)
@@ -515,12 +526,16 @@ case $ACTION in
             errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
             ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
             ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
+        else
+            echo "No changes in effective-bundles"
         fi
         UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
         if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
             errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
             ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
             ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
+        else
+            echo "No unknown files in effective-bundles"
         fi
         # optional validation bundles
         if [ -d "$VALIDATIONS_DIR" ]; then
@@ -530,12 +545,16 @@ case $ACTION in
                 errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
                 ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
                 ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
+            else
+                echo "No changes in validations"
             fi
             UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
             if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
                 errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
                 ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
                 ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
+            else
+                echo "No unknown files in validations"
             fi
         fi
         if [ -n "${ERROR_MSGS}" ]; then
@@ -547,6 +566,8 @@ case $ACTION in
             echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
             printf '%s\n\n' "$ERROR_MSGS"
             die "Pre-commit run failed. See above."
+        else
+            echo "No error messages"
         fi
         ;;
     generate)
