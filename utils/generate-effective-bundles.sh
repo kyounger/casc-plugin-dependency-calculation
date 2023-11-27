@@ -35,7 +35,7 @@ fi
 # - name of current git branch (if git on PATH)
 CI_DETECTION_PATTERN_DEFAULT="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
 CI_DETECTION_PATTERN="${CI_DETECTION_PATTERN:-"${CI_DETECTION_PATTERN_DEFAULT}"}"
-CI_TEST_PATTERN="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]"
+CI_TEST_PATTERN="([0-9]+\.[0-9]+\.[0-9]+\.[0-9])"
 
 # find the DEP_TOOL location (found as cascdeps in the docker image)
 if command -v cascdeps &> /dev/null; then
@@ -81,7 +81,7 @@ determineCIVersion() {
             if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
                 local knownVersion=''
                 knownVersion=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
-                if [[ "$knownVersion" =~ $CI_DETECTION_PATTERN ]]; then
+                if [[ "$knownVersion" =~ $CI_TEST_PATTERN ]]; then
                     echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}."
                     CI_VERSION="${BASH_REMATCH[1]}"
                 fi
