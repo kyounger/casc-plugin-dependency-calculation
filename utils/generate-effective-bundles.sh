@@ -270,7 +270,7 @@ replacePluginCatalog() {
     local targetBundleYaml=$3
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
-    finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
+    local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
     while IFS= read -r -d '' f; do
@@ -339,7 +339,7 @@ replacePluginCatalog() {
         checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
         checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
         csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
-        createValidation "$checkSumFullExpected" "$effectivePluginsList"
+        createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml"
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
@@ -445,6 +445,7 @@ cleanupUnusedBundles() {
 createValidation() {
     local checkSumFullExpected=$1
     local effectivePluginsList=$2
+    local finalPluginCatalogYaml=$3
     # validation bundles - we are assuming there is only 1 x plugins.yaml, 1 x plugin-catalog.yaml
     local validationBundle="${VALIDATIONS_BUNDLE_PREFIX}${checkSumFullExpected}"
     local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
