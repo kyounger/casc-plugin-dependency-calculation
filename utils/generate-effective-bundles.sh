@@ -2,6 +2,27 @@
 
 set -euo pipefail
 
+# load .env if present
+loadDotenv() {
+    local dotEnvFile="${WORKSPACE}/.env"
+    if [ -f "${dotEnvFile}" ]; then
+        echo "INFO: Found .env- sourcing the file: ${WORKSPACE}/.env"
+        # check for allexport...
+        if [ "$-" = "${-%a*}" ]; then
+            # allexport is not set
+            set -a
+            # shellcheck source=/dev/null
+            . "${dotEnvFile}"
+            set +a
+        else
+            # shellcheck source=/dev/null
+            . "${dotEnvFile}"
+        fi
+    fi
+}
+WORKSPACE="${WORKSPACE:-${PWD}}"
+loadDotenv
+
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
 DRY_RUN="${DRY_RUN:-1}"
 # automatically update catalog if plugin yamls have changed. supercedes DRY_RUN
@@ -12,16 +33,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # assuming some variables - can be overwritten
-TEST_RESOURCES_DIR="${TEST_RESOURCES_DIR:-"${PWD}/test-resources"}"
+TEST_RESOURCES_DIR="${WORKSPACE}/test-resources"
+EFFECTIVE_DIR="${WORKSPACE}/effective-bundles"
+VALIDATIONS_DIR="${WORKSPACE}/validation-bundles"
+RAW_DIR="${WORKSPACE}/raw-bundles"
+
 TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
-EFFECTIVE_DIR="${EFFECTIVE_DIR:-"${PWD}/effective-bundles"}"
-RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
-VALIDATIONS_DIR="${VALIDATIONS_DIR:-"${PWD}/validation-bundles"}"
 VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX:-val-}"
 VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
 CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
-export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${PWD}/target"}"
-export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
+export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${WORKSPACE}/target"}"
+export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${WORKSPACE}/.cache"}"
 
 # optional kustomization.yaml creation
 KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
