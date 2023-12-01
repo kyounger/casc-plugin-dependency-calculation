@@ -12,17 +12,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # assuming some variables - can be overwritten
+TEST_RESOURCES_DIR="${TEST_RESOURCES_DIR:-"${PWD}/test-resources"}"
+TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
 EFFECTIVE_DIR="${EFFECTIVE_DIR:-"${PWD}/effective-bundles"}"
 RAW_DIR="${RAW_DIR:-"${PWD}/raw-bundles"}"
+VALIDATIONS_DIR="${VALIDATIONS_DIR:-"${PWD}/validation-bundles"}"
+VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX:-val-}"
+VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
+CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
 export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${PWD}/target"}"
 export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${PWD}/.cache"}"
+
+# optional kustomization.yaml creation
+KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
+if [ -f "${KUSTOMIZATION_YAML}" ]; then
+    command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
+fi
 
 # CI_VERSION env var set, no detection necessary. Otherwise,
 # version detection (detected in the following order):
 # - name of parent directory of RAW_DIR
 # - name of current git branch (if git on PATH)
-CI_DETECTION_PATTERN="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
-CI_TEST_PATTERN="[0-9]+\.[0-9]+\.[0-9]+\.[0-9]"
+CI_DETECTION_PATTERN_DEFAULT="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
+CI_DETECTION_PATTERN="${CI_DETECTION_PATTERN:-"${CI_DETECTION_PATTERN_DEFAULT}"}"
+CI_TEST_PATTERN="([0-9]+\.[0-9]+\.[0-9]+\.[0-9])"
 
 # find the DEP_TOOL location (found as cascdeps in the docker image)
 if command -v cascdeps &> /dev/null; then
@@ -43,27 +56,55 @@ determineCIVersion() {
         versionDir=$(dirname "$RAW_DIR")
         versionDirName=$(basename "$versionDir")
         # test parent dir
+        echo "INFO: Testing CI_VERSION according to parent of RAW_DIR..."
         if [[ "$versionDirName" =~ $CI_DETECTION_PATTERN ]]; then
             echo "INFO: Setting CI_VERSION according to parent of RAW_DIR."
             CI_VERSION="${BASH_REMATCH[1]}"
-        elif [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
-            echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
-            CI_VERSION="${BASH_REMATCH[1]}"
-        elif command -v git &> /dev/null; then
-            local gitBranch=''
-            gitBranch=$(git rev-parse --abbrev-ref HEAD)
-            if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
-                echo "INFO: Setting CI_VERSION according to git branch from command."
+        fi
+        if [ -z "$CI_VERSION" ]; then
+            echo "INFO: Testing CI_VERSION according to GIT_BRANCH env var..."
+            if [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
+                echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
                 CI_VERSION="${BASH_REMATCH[1]}"
             fi
-        else
+        fi
+        if [ -z "$CI_VERSION" ]; then
+            echo "INFO: Testing CI_VERSION according to git branch from command..."
+            if command -v git &> /dev/null; then
+                local gitBranch=''
+                gitBranch=$(git rev-parse --abbrev-ref HEAD)
+                if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
+                    echo "INFO: Setting CI_VERSION according to git branch from command."
+                    CI_VERSION="${BASH_REMATCH[1]}"
+                fi
+            fi
+        fi
+        if [ -z "$CI_VERSION" ]; then
+            echo "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
+            if [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
+                # Used in PR use cases where the CI_VERSION cannot be determined otherwise
+                if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
+                    local knownVersion=''
+                    knownVersion=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
+                    if [[ "$knownVersion" =~ $CI_TEST_PATTERN ]]; then
+                        echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}."
+                        CI_VERSION="${BASH_REMATCH[1]}"
+                    fi
+                else
+                    echo "WARN: Multiple versions found in ${TEST_RESOURCES_CI_VERSIONS}. Not setting anything."
+                fi
+            fi
+        fi
+        if [ -z "$CI_VERSION" ]; then
             # we've got this without being able to find the CI_VERSION so...
-            die "Could not determine a CI_VERSION. Checked env var, RAW_DIR's parent dir, GIT_BRANCH env var, and git branch."
+            die "Could not determine a CI_VERSION."
         fi
     else
         echo "INFO: Setting CI_VERSION according to CI_VERSION env var."
     fi
     [[ "${CI_VERSION}" =~ $CI_TEST_PATTERN ]] || die "CI_VERSION '${CI_VERSION}' is not a valid version."
+    # set the version with dashes for later use
+    CI_VERSION_DASHES="${CI_VERSION//\./-}"
 }
 
 processVars() {
@@ -220,6 +261,7 @@ generate() {
         echo "INFO: Resulting bundle.yaml"
         yq . "${targetBundleYaml}"
     done < <(listBundleYamlsIn "$RAW_DIR")
+    cleanupUnusedBundles
 }
 
 replacePluginCatalog() {
@@ -228,7 +270,7 @@ replacePluginCatalog() {
     local targetBundleYaml=$3
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
-    finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
+    local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
     while IFS= read -r -d '' f; do
@@ -245,22 +287,29 @@ replacePluginCatalog() {
         return 0
     fi
 
-    DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+    if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
+        echo "Detected the PLUGIN_CATALOG_OFFLINE_URL_BASE variable. Using the offline catalog."
+        DEP_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
+    else
+        DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+    fi
     # this is a tricky one, but we want
     # - unique list of plugins from all files
     # - comments should be preserved so that last comment stays (important for custom tags)
     # - see the bottom of this script for an example
     local checkSumEffectivePlugins=''
     local checkSumPluginsExpected=''
+    local checkSumFullActual=''
     local checkSumPluginsActual=''
-    checkSumEffectivePlugins=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false | md5sum | cut -d' ' -f 1)
+    local effectivePluginsList=''
+    effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
+    checkSumEffectivePlugins=$(echo "$effectivePluginsList" | md5sum | cut -d' ' -f 1)
     if [ -f "${finalPluginCatalogYaml}" ]; then
         # check for checksum in catalog
-        local checkSumFullActual=''
         checkSumFullActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
         checkSumPluginsActual="${checkSumFullActual%-*}"
     fi
-    checkSumPluginsExpected="${CI_VERSION//\./-}-${checkSumEffectivePlugins}"
+    checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
     local localDryRun="${DRY_RUN}"
     echo ""
@@ -284,16 +333,13 @@ replacePluginCatalog() {
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         "${DEP_TOOL_CMD[@]}"
-        # reset head_comment to new checksum
-        local checkSumIncludePlugins=''
-        checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
-        csum="CHECKSUM_PLUGIN_FILES=${checkSumPluginsExpected}-${checkSumIncludePlugins}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
-    # set the plugin catalog section if needed
+    # set the plugin catalog header and section if needed
     local pluginsInCatalog='0'
     if [ -f "$finalPluginCatalogYaml" ]; then
+        resetHeadCommit "${checkSumPluginsExpected}" "${finalPluginCatalogYaml}" "${effectivePluginsList}"
         pluginsInCatalog=$(yq '.configurations[0].includePlugins|length' "${finalPluginCatalogYaml}")
         if [ "$pluginsInCatalog" -gt 0 ]; then
             bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
@@ -303,6 +349,20 @@ replacePluginCatalog() {
     else
         echo "No plugin catalog file. No need to set it in bundle..."
     fi
+}
+
+## create plugin commands
+resetHeadCommit() {
+    local checkSumPluginsExpected=$1
+    local finalPluginCatalogYaml=$2
+    local effectivePluginsList=$3
+    # reset head_comment to new checksum
+    local checkSumIncludePlugins=''
+    local checkSumFullExpected=''
+    checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
+    checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
+    csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
+    createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml"
 }
 
 ## create plugin commands
@@ -334,17 +394,109 @@ plugins() {
     done < <(listBundleYamlsIn "$RAW_DIR")
 }
 
-commitAnyChangesInEffectiveBundles() {
-    # check pristine
-    git add "$EFFECTIVE_DIR"
-    if [ -n "$(git --no-pager diff --cached --stat "$EFFECTIVE_DIR")" ]; then
-        echo 'Diffs found. Checking in...'
-        git commit -m "Applying changes to effective bundles" "$EFFECTIVE_DIR"
-        git push origin
-    else
-        echo 'No diff found. Ignoring...'
+cleanupUnusedBundles() {
+    echo "Running clean up effective bundles..."
+    # Effective
+    for bundleName in $(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
+        echo "CLEANUP - Checking effective bundle '$bundleName'"
+        if [ ! -d "${RAW_DIR}/$bundleName" ]; then
+            echo "CLEANUP - Removing unused effective bundle '${bundleName}'"
+            rm -rf "${EFFECTIVE_DIR}/${bundleName:?}"
+        fi
+    done
+    echo "Running clean up validation bundles if present..."
+    if [ -d "$VALIDATIONS_DIR" ]; then
+        # Validations
+        for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
+            [[ -d "$d" ]] || break
+            local bundleName=''
+            bundleName=$(basename "$d")
+            [[ "$bundleName" != "${VALIDATIONS_TEMPLATE}" ]] || continue # # skip the VALIDATIONS_TEMPLATE
+            local validationCheckSum="${bundleName//"${VALIDATIONS_BUNDLE_PREFIX}"/}"
+            echo "CLEANUP - Looking for validation checksum '$validationCheckSum'"
+            if ! grep -rq "$validationCheckSum" "${EFFECTIVE_DIR}"; then
+                echo "CLEANUP - Removing unused validation bundle '${bundleName}'"
+                rm -rf "${VALIDATIONS_DIR}/${bundleName:?}"
+            else
+                # Exists so let's add all associated effective bundles as a head comment for
+                # easier processing afterwards
+                local headerStr=''
+                while IFS= read -r f; do
+                    [[ -e "$f" ]] || break
+                    local associatedBundleName=''
+                    associatedBundleName=$(basename "$(dirname "$f")")
+                    echo "Adding associated bundle '$associatedBundleName'"
+                    if [ -z "$headerStr" ]; then
+                        headerStr="$associatedBundleName"
+                    else
+                        headerStr=$(printf '%s\n%s' "$headerStr" "$associatedBundleName")
+                    fi
+                done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
+                headerStr="$(sort <<< "${headerStr}")" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
+            fi
+        done
+    fi
+    echo "Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
+    if [ -f "${KUSTOMIZATION_YAML}" ]; then
+        echo -n > "${KUSTOMIZATION_YAML}"
+        (cd "$EFFECTIVE_DIR" && {
+            for d in $(find . -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
+                kustomize edit add configmap "${CI_VERSION_DASHES}-${d}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
+            done
+        };)
+        echo "Recreated the kustomisation.yaml"
     fi
 }
+
+createValidation() {
+    local checkSumFullExpected=$1
+    local effectivePluginsList=$2
+    local finalPluginCatalogYaml=$3
+    # validation bundles - we are assuming there is only 1 x plugins.yaml, 1 x plugin-catalog.yaml
+    local validationBundle="${VALIDATIONS_BUNDLE_PREFIX}${checkSumFullExpected}"
+    local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
+    if [ -d "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" ]; then
+        echo "VALIDATION BUNDLES - Checking bundle '$validationBundle'"
+        if [ ! -d "${validationDir}" ] || [ "$DRY_RUN" -eq 0 ]; then
+            echo "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
+            rm -rf "${validationDir}"
+            cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
+            touch "${validationDir}/plugins.yaml"
+            pl="$effectivePluginsList" yq -i '.plugins = env(pl)' "${validationDir}/plugins.yaml"
+            cp -r "${finalPluginCatalogYaml}" "${validationDir}/plugin-catalog.yaml"
+        else
+            echo "VALIDATION BUNDLES - Existing bundle '$validationBundle' found."
+        fi
+    else
+        echo "VALIDATION BUNDLES - No validation template found so not creating for '$validationBundle'."
+    fi
+}
+
+# TEST UTILS - FOR USE IN CI PIPELINES
+# TEST UTILS - FOR USE IN CI PIPELINES
+# TEST UTILS - FOR USE IN CI PIPELINES
+
+## Takes 1 arg (bundleName) - creates a <bundleName>.zip file in the root of WORKSPACE
+createTestResources() {
+    mkdir -p "${TEST_RESOURCES_DIR}"
+    for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
+        for bundle in $(yq '. | head_comment' "${d}/plugins.yaml"); do
+            local testValidationDir=''
+            testValidationDir="${TEST_RESOURCES_DIR}/$(basename "$d")"
+            mkdir -p "$testValidationDir"
+            cd "${EFFECTIVE_DIR}/${bundle}"
+            rm -f "${testValidationDir}/${bundle}.zip"
+            zip -r "${testValidationDir}/${bundle}.zip" .
+            echo "Created '${testValidationDir}/${bundle}.zip'"
+        done
+    done
+    # Add a unique list of detected CI_VERSION values
+    yq --no-doc '.configurations[0].prerequisites.productVersion' \
+        "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*/plugin-catalog.yaml \
+        | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+        | sort -u > "${TEST_RESOURCES_CI_VERSIONS}"
+}
+
 
 # main
 ACTION="${1:-}"
@@ -359,10 +511,15 @@ case $ACTION in
         # - find changes to effective plugins directories
         # then:
         # - we need to update the plugin catalogs before checking...
+        ERROR_REPORT=''
+        ERROR_MSGS=''
         CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
         CACHED_PLUGINS_FILES=$(git diff --name-only --cached "${EFFECTIVE_DIR}"/**/plugins)
         if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
-            die "Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+            echo ""
+            errMsg="CHANGED_PLUGINS_FILES: Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS="${ERROR_MSGS}\n${errMsg}"
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_PLUGINS_FILES")
         elif [ "$DRY_RUN" -ne 0 ] && [ -n "$CACHED_PLUGINS_FILES" ]; then
             echo ""
             echo "WARNING >>>> Cached plugin files found! Reminder to please ensure you recreated the plugin catalog using DRY_RUN=0"
@@ -370,10 +527,55 @@ case $ACTION in
             echo ""
         fi
         # fail if non-cached diffs found in effective bundles
-        [ -z "$(git --no-pager diff --stat "$EFFECTIVE_DIR")" ] || \
-            die "Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-        [ -z "$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)" ] || \
-            die "Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        CHANGED_EFFECTIVE_DIR=$(git --no-pager diff --stat "$EFFECTIVE_DIR")
+        CHANGED_EFFECTIVE_DIR_FULL=$(git --no-pager diff "$EFFECTIVE_DIR")
+        if [ -n "${CHANGED_EFFECTIVE_DIR}" ]; then
+            errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
+        else
+            echo "No changes in effective-bundles"
+        fi
+        UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
+        if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
+            errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
+        else
+            echo "No unknown files in effective-bundles"
+        fi
+        # optional validation bundles
+        if [ -d "$VALIDATIONS_DIR" ]; then
+            CHANGED_VALIDATIONS_DIR=$(git --no-pager diff --stat "$VALIDATIONS_DIR")
+            CHANGED_VALIDATIONS_DIR_FULL=$(git --no-pager diff "$VALIDATIONS_DIR")
+            if [ -n "${CHANGED_VALIDATIONS_DIR}" ]; then
+                errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+                ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+                ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
+            else
+                echo "No changes in validations"
+            fi
+            UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
+            if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
+                errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+                ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+                ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
+            else
+                echo "No unknown files in validations"
+            fi
+        fi
+        if [ -n "${ERROR_MSGS}" ]; then
+            if [ "$DEBUG" -eq 1 ]; then
+                echo "SHOWING FULL $PRE_COMMIT_LOG"
+                cat "$PRE_COMMIT_LOG"
+                printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
+            fi;
+            echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
+            printf '%s\n\n' "$ERROR_MSGS"
+            die "Pre-commit run failed. See above."
+        else
+            echo "No error messages"
+        fi
         ;;
     generate)
         processVars
@@ -398,13 +600,17 @@ case $ACTION in
         plugins "${@}"
         generate "${@}"
         ;;
+    createTestResources) # can be used in pipelines when vaildating bundles
+        createTestResources
+        ;;
     *)
         die "Unknown action '$ACTION' (actions are: pre-commit, generate, plugins, all, force)
     - plugins: used to create the minimal set of plugins for your bundles
     - generate: used to create the effective bundles
     - all: running both plugins and then generate
     - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
-    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits"
+    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
+    - createTestResources: can be used in pipelines when vaildating bundles. creates bundle zips, list detected CI_VERSIONS, etc."
         ;;
 esac
 echo "Done"

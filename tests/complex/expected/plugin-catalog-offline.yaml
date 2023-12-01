@@ -46,7 +46,7 @@ configurations:
       configuration-as-code-groovy:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/configuration-as-code-groovy/1.1/configuration-as-code-groovy.hpi"
       ec2-fleet:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/ec2-fleet/3.1.0/ec2-fleet.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/ec2-fleet/3.2.0/ec2-fleet.hpi"
       envinject:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/envinject/2.908.v66a_774b_31d93/envinject.hpi"
       envinject-api:
