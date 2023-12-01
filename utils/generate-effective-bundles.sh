@@ -333,19 +333,13 @@ replacePluginCatalog() {
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         "${DEP_TOOL_CMD[@]}"
-        # reset head_comment to new checksum
-        local checkSumIncludePlugins=''
-        local checkSumFullExpected=''
-        checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
-        checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
-        csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
-        createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml"
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
-    # set the plugin catalog section if needed
+    # set the plugin catalog header and section if needed
     local pluginsInCatalog='0'
     if [ -f "$finalPluginCatalogYaml" ]; then
+        resetHeadCommit "${checkSumPluginsExpected}" "${finalPluginCatalogYaml}" "${effectivePluginsList}"
         pluginsInCatalog=$(yq '.configurations[0].includePlugins|length' "${finalPluginCatalogYaml}")
         if [ "$pluginsInCatalog" -gt 0 ]; then
             bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
@@ -355,6 +349,20 @@ replacePluginCatalog() {
     else
         echo "No plugin catalog file. No need to set it in bundle..."
     fi
+}
+
+## create plugin commands
+resetHeadCommit() {
+    local checkSumPluginsExpected=$1
+    local finalPluginCatalogYaml=$2
+    local effectivePluginsList=$3
+    # reset head_comment to new checksum
+    local checkSumIncludePlugins=''
+    local checkSumFullExpected=''
+    checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
+    checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
+    csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
+    createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml"
 }
 
 ## create plugin commands
