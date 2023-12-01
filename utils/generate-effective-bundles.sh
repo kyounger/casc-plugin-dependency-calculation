@@ -389,10 +389,8 @@ plugins() {
 cleanupUnusedBundles() {
     echo "Running clean up effective bundles..."
     # Effective
-    for d in $(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
-        [[ -e "$d" ]] || break
-        local bundleName=''
-        bundleName=$(basename "$d")
+    for bundleName in $(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
+        echo "CLEANUP - Checking effective bundle '$bundleName'"
         if [ ! -d "${RAW_DIR}/$bundleName" ]; then
             echo "CLEANUP - Removing unused effective bundle '${bundleName}'"
             rm -rf "${EFFECTIVE_DIR}/${bundleName:?}"
@@ -402,7 +400,7 @@ cleanupUnusedBundles() {
     if [ -d "$VALIDATIONS_DIR" ]; then
         # Validations
         for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
-            [[ -e "$d" ]] || break # break if empty
+            [[ -d "$d" ]] || break
             local bundleName=''
             bundleName=$(basename "$d")
             [[ "$bundleName" != "${VALIDATIONS_TEMPLATE}" ]] || continue # # skip the VALIDATIONS_TEMPLATE
