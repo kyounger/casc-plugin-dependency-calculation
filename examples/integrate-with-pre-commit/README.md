@@ -4,33 +4,7 @@ Using [pre-commit](https://pre-commit.com/) helps ensure you do not check in inc
 
 For example, if you make a change to your raw bundle but forget to run the appropriate `cascgen` command.
 
-To do this, simply add the following file to the root of your bundles repository, along with the associate pre-commit configuration.
-
-The `generate-effective-bundles.sh` wrapper script
-
-```sh
-#!/usr/bin/env bash
-
-set -ue
-
-# Exporting these values here allow us to do things like
-#     DEBUG=1 ./generate-effective-bundles.sh generate
-#     DEBUG=1 VERSION_FILTER=2.401.33 ./generate-effective-bundles.sh generate
-#
-# Or (more importantly) use with pre-commit...
-#     DEBUG=1 pre-commit run
-#     etc
-export AUTO_UPDATE_CATALOG DRY_RUN DEBUG BUNDLE_FILTER
-
-# call the underlying script (DEP_TOOL_HOME needs to be set accordingly if not using cascgen)
-if command -v cascgen &> /dev/null; then
-    cascgen "$@"
-else
-    "${DEP_TOOL_HOME}/utils/generate-effective-bundles.sh" "$@"
-fi
-```
-
-Example pre-commit configuration to saved at `.pre-commit-config.yaml`
+To do this, simply add the following pre-commit configuration to the root of your bundles repository.
 
 ```yaml
 repos:
@@ -38,8 +12,8 @@ repos:
     hooks:
       - id: check-effective-bundles
         name: check-effective-bundles
-        entry: generate-effective-bundles.sh
-        args: [pre-commit]
+        entry: /usr/bin/env
+        args: [cascgen, pre-commit]
         language: script
         pass_filenames: false
         verbose: false
