@@ -29,6 +29,9 @@ CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
 CB_HELM_REPO_URL=https://public-charts.artifacts.cloudbees.com/repository/public/index.yaml
 JENKINS_UC_ACTUAL_URL='https://updates.jenkins.io/update-center.actual.json'
 
+# minimal tool versions
+MIN_VER_YQ="4.35.2"
+
 # plugin annotations to be added manually
 export ANNOTATION_CUSTOM_VERSION_PREFIX="tag:custom:version="
 export ANNOTATION_CUSTOM_URL_PREFIX="tag:custom:url="
@@ -203,6 +206,11 @@ die() {
   exit 1
 }
 
+# util function to test versions
+ver() {
+  echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
+}
+
 extractAndFormat() {
   sed 's/.*\post(//' "${1}" | sed 's/);\w*$//' | jq .
 }
@@ -238,9 +246,13 @@ cacheUpdateCenter() {
 
 prereqs() {
   [[ "${BASH_VERSION:0:1}" -lt 4 ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
-  for tool in yq jq curl; do
+  for tool in awk yq jq curl; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
+  # yq version
+  local yqCurrentVersion=''
+  yqCurrentVersion=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" <<< "$(yq --version)")
+  [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqCurrentVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ'"
   # some general sanity checks
   if [ -n "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}" ]; then
     [ -f "${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}" ] || die "The exec-hook '${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK}' needs to be a file"

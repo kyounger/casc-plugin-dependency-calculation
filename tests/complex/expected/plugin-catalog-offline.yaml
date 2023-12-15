@@ -78,7 +78,7 @@ configurations:
       slack:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/slack/664.vc9a_90f8b_c24a_/slack.hpi"
       swarm:
-        url: "https://jenkins-updates.cloudbees.com/download/plugins/swarm/3.41/swarm.hpi"
+        url: "https://jenkins-updates.cloudbees.com/download/plugins/swarm/3.42/swarm.hpi"
       throttle-concurrents:
         url: "https://jenkins-updates.cloudbees.com/download/plugins/throttle-concurrents/2.13/throttle-concurrents.hpi"
       uno-choice:

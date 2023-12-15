@@ -78,7 +78,7 @@ configurations:
       slack:
         version: "664.vc9a_90f8b_c24a_"
       swarm:
-        version: "3.41"
+        version: "3.42"
       throttle-concurrents:
         version: "2.13"
       uno-choice:
