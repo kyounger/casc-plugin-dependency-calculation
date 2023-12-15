@@ -361,13 +361,14 @@ replacePluginCatalog() {
     # set the plugin catalog header and section if needed
     local pluginsInCatalog='0'
     if [ -f "$finalPluginCatalogYaml" ]; then
-        resetHeadCommit "${checkSumPluginsExpected}" "${finalPluginCatalogYaml}" "${effectivePluginsList}"
         pluginsInCatalog=$(yq '.configurations[0].includePlugins|length' "${finalPluginCatalogYaml}")
         if [ "$pluginsInCatalog" -gt 0 ]; then
             bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
         else
             echo "No plugins in catalog. No need to set it in bundle..."
+            bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
         fi
+        resetHeadCommit "${checkSumPluginsExpected}" "${finalPluginCatalogYaml}" "${effectivePluginsList}" "${pluginsInCatalog}"
     else
         echo "No plugin catalog file. No need to set it in bundle..."
     fi
@@ -378,13 +379,14 @@ resetHeadCommit() {
     local checkSumPluginsExpected=$1
     local finalPluginCatalogYaml=$2
     local effectivePluginsList=$3
+    local pluginsInCatalog=$4
     # reset head_comment to new checksum
     local checkSumIncludePlugins=''
     local checkSumFullExpected=''
     checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
     checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
     csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
-    createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml"
+    createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml" "${pluginsInCatalog}"
 }
 
 ## create plugin commands
@@ -419,7 +421,9 @@ plugins() {
 cleanupUnusedBundles() {
     echo "Running clean up effective bundles..."
     # Effective
-    for bundleName in $(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
+    local bundles=''
+    bundles=$(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort)
+    for bundleName in $bundles; do
         echo "CLEANUP - Checking effective bundle '$bundleName'"
         if [ ! -d "${RAW_DIR}/$bundleName" ]; then
             echo "CLEANUP - Removing unused effective bundle '${bundleName}'"
@@ -462,7 +466,9 @@ cleanupUnusedBundles() {
     if [ -f "${KUSTOMIZATION_YAML}" ]; then
         echo -n > "${KUSTOMIZATION_YAML}"
         (cd "$EFFECTIVE_DIR" && {
-            for d in $(find . -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort); do
+            local bundles=''
+            bundles=$(find . -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort)
+            for d in $bundles; do
                 kustomize edit add configmap "${CI_VERSION_DASHES}-${d}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
             done
         };)
@@ -474,6 +480,7 @@ createValidation() {
     local checkSumFullExpected=$1
     local effectivePluginsList=$2
     local finalPluginCatalogYaml=$3
+    local pluginsInCatalog=$4
     # validation bundles - we are assuming there is only 1 x plugins.yaml, 1 x plugin-catalog.yaml
     local validationBundle="${VALIDATIONS_BUNDLE_PREFIX}${checkSumFullExpected}"
     local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
@@ -485,7 +492,12 @@ createValidation() {
             cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
             touch "${validationDir}/plugins.yaml"
             pl="$effectivePluginsList" yq -i '.plugins = env(pl)' "${validationDir}/plugins.yaml"
-            cp -r "${finalPluginCatalogYaml}" "${validationDir}/plugin-catalog.yaml"
+            if [ "${pluginsInCatalog}" -gt 0 ]; then
+                cp -r "${finalPluginCatalogYaml}" "${validationDir}/plugin-catalog.yaml"
+            else
+                rm -f "${validationDir}/plugin-catalog.yaml"
+                bs="catalog" yq -i 'del(.[env(bs)])' "${validationDir}/bundle.yaml"
+            fi
         else
             echo "VALIDATION BUNDLES - Existing bundle '$validationBundle' found."
         fi
