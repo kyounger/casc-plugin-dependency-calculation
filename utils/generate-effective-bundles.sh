@@ -366,6 +366,7 @@ replacePluginCatalog() {
             bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
         else
             echo "No plugins in catalog. No need to set it in bundle..."
+            rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
             bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
         fi
         resetHeadCommit "${checkSumPluginsExpected}" "${finalPluginCatalogYaml}" "${effectivePluginsList}" "${pluginsInCatalog}"
