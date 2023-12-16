@@ -23,6 +23,8 @@ loadDotenv() {
 WORKSPACE="${WORKSPACE:-${PWD}}"
 loadDotenv
 
+MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
+MINIMUM_PLUGINS_ERR="Minimum plugins error: you need at a minimum cloudbees-casc-client and cloudbees-casc-items-controller if using items"
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
 DRY_RUN="${DRY_RUN:-1}"
 # automatically update catalog if plugin yamls have changed. supercedes DRY_RUN
@@ -327,8 +329,8 @@ replacePluginCatalog() {
     effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
     checkSumEffectivePlugins=$(echo "$effectivePluginsList" | md5sum | cut -d' ' -f 1)
     if [ -f "${finalPluginCatalogYaml}" ]; then
-        # check for checksum in catalog
-        checkSumFullActual=$(yq '. | head_comment' "$finalPluginCatalogYaml" | xargs | cut -d'=' -f 2)
+        # check for checksum in bundle header
+        checkSumFullActual=$(yq '. | head_comment' "$targetBundleYaml" | xargs | cut -d'=' -f 2)
         checkSumPluginsActual="${checkSumFullActual%-*}"
     fi
     checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
@@ -360,34 +362,44 @@ replacePluginCatalog() {
     fi
     # set the plugin catalog header and section if needed
     local pluginsInCatalog='0'
+    # default to empty string. it's changed if plugins are included in catalog
+    local checkSumIncludePlugins="${MD5SUM_EMPTY_STR}"
+    local checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
     if [ -f "$finalPluginCatalogYaml" ]; then
         pluginsInCatalog=$(yq '.configurations[0].includePlugins|length' "${finalPluginCatalogYaml}")
         if [ "$pluginsInCatalog" -gt 0 ]; then
+            # set plugin catalog
             bs=catalog pc="${pluginCatalogYamlFile}" yq -i '.[env(bs)] = [env(pc)]' "${targetBundleYaml}"
+            # update the checkSumFullExpected header
+            checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
+            checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
         else
             echo "No plugins in catalog. No need to set it in bundle..."
             rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
             bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
         fi
-        resetHeadCommit "${checkSumPluginsExpected}" "${finalPluginCatalogYaml}" "${effectivePluginsList}" "${pluginsInCatalog}"
     else
         echo "No plugin catalog file. No need to set it in bundle..."
+        rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
+        bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
     fi
+    # update the unique checksum header
+    csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${targetBundleYaml}"
+    sanityCheckMinimumPlugins "$effectivePluginsList"  "$targetBundleYaml"
+    createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml"
 }
 
-## create plugin commands
-resetHeadCommit() {
-    local checkSumPluginsExpected=$1
-    local finalPluginCatalogYaml=$2
-    local effectivePluginsList=$3
-    local pluginsInCatalog=$4
-    # reset head_comment to new checksum
-    local checkSumIncludePlugins=''
-    local checkSumFullExpected=''
-    checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
-    checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
-    csum="${CHECKSUM_PLUGIN_FILES_KEY}=${checkSumFullExpected}" yq -i '. head_comment=env(csum)' "${finalPluginCatalogYaml}"
-    createValidation "$checkSumFullExpected" "$effectivePluginsList" "$finalPluginCatalogYaml" "${pluginsInCatalog}"
+sanityCheckMinimumPlugins() {
+    local effectivePluginsList=$1
+    local targetBundleYaml=$2
+    # sanity check - need...
+    # - "cloudbees-casc-client" at a bare minimum
+    # - "cloudbees-casc-items-controller" if the items
+    echo "Sanity checking minimum plugins..."
+    testForEffectivePlugin "cloudbees-casc-client" "${effectivePluginsList}" || die "$MINIMUM_PLUGINS_ERR"
+    if yq -e '.|has("items")' "${targetBundleYaml}" &>/dev/null; then
+        testForEffectivePlugin "cloudbees-casc-items-controller" "${effectivePluginsList}" || die "$MINIMUM_PLUGINS_ERR"
+    fi
 }
 
 ## create plugin commands
@@ -481,7 +493,6 @@ createValidation() {
     local checkSumFullExpected=$1
     local effectivePluginsList=$2
     local finalPluginCatalogYaml=$3
-    local pluginsInCatalog=$4
     # validation bundles - we are assuming there is only 1 x plugins.yaml, 1 x plugin-catalog.yaml
     local validationBundle="${VALIDATIONS_BUNDLE_PREFIX}${checkSumFullExpected}"
     local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
@@ -491,9 +502,10 @@ createValidation() {
             echo "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
             rm -rf "${validationDir}"
             cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
-            touch "${validationDir}/plugins.yaml"
-            pl="$effectivePluginsList" yq -i '.plugins = env(pl)' "${validationDir}/plugins.yaml"
-            if [ "${pluginsInCatalog}" -gt 0 ]; then
+            local valPluginsYaml="${validationDir}/plugins.yaml"
+            touch "${valPluginsYaml}"
+            pl="$effectivePluginsList" yq -i '.plugins = env(pl)' "${valPluginsYaml}"
+            if [ -f "${finalPluginCatalogYaml}" ]; then
                 cp -r "${finalPluginCatalogYaml}" "${validationDir}/plugin-catalog.yaml"
             else
                 rm -f "${validationDir}/plugin-catalog.yaml"
@@ -505,6 +517,10 @@ createValidation() {
     else
         echo "VALIDATION BUNDLES - No validation template found so not creating for '$validationBundle'."
     fi
+}
+
+testForEffectivePlugin() {
+    echo "$2" | p="$1" yq -e '.[]|select(.id == strenv(p))' - &>/dev/null
 }
 
 # TEST UTILS - FOR USE IN CI PIPELINES
