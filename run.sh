@@ -629,8 +629,15 @@ cat << EOF
   Dependency tree of processed plugins:
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
 
-  For more details on a plugin, run:
+  For more details on the dependencies of a plugin, run:
+    # all dependencies
     p=<PLUGIN_TO_CHECK>; grep -E ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
+    # unique parents only
+    p=<PLUGIN_TO_CHECK>; grep -oE ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}" | sort -u
+
+  For a full report on the dependencies of all 3rd party plugins, run:
+    p="(\$(echo -n "\$(yq '.configurations[0].includePlugins|keys|.[]' "${TARGET_PLUGIN_CATALOG#"${CURRENT_DIR}"/}")" | tr '\n' '|'))"; \\
+      grep -oE ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}" | sort -u
 
   List of all plugins to be expected on controller after startup:
     cat "${TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP#"${CURRENT_DIR}"/}"
