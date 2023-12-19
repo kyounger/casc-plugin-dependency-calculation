@@ -24,7 +24,7 @@ WORKSPACE="${WORKSPACE:-${PWD}}"
 loadDotenv
 
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
-MINIMUM_PLUGINS_ERR="Minimum plugins error: you need at a minimum cloudbees-casc-client and cloudbees-casc-items-controller if using items"
+MINIMUM_PLUGINS_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and cloudbees-casc-items-controller if using items"
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
 DRY_RUN="${DRY_RUN:-1}"
 # automatically update catalog if plugin yamls have changed. supercedes DRY_RUN
@@ -396,9 +396,9 @@ sanityCheckMinimumPlugins() {
     # - "cloudbees-casc-client" at a bare minimum
     # - "cloudbees-casc-items-controller" if the items
     echo "Sanity checking minimum plugins..."
-    testForEffectivePlugin "cloudbees-casc-client" "${effectivePluginsList}" || die "$MINIMUM_PLUGINS_ERR"
+    testForEffectivePlugin "cloudbees-casc-client" "${effectivePluginsList}" || die "ERROR: Bundle '$(basename "${bundleDir}")' - $MINIMUM_PLUGINS_ERR"
     if yq -e '.|has("items")' "${targetBundleYaml}" &>/dev/null; then
-        testForEffectivePlugin "cloudbees-casc-items-controller" "${effectivePluginsList}" || die "$MINIMUM_PLUGINS_ERR"
+        testForEffectivePlugin "cloudbees-casc-items-controller" "${effectivePluginsList}" || die "ERROR: Bundle '$(basename "${bundleDir}")' - $MINIMUM_PLUGINS_ERR"
     fi
 }
 
