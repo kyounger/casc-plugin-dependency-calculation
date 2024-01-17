@@ -187,7 +187,7 @@ debug() {
 }
 
 timestampMe() {
-  [ "$ADD_TS" -eq 0 ] || date -u +"%H:%M:%S "
+  [ "$ADD_TS" -eq 0 ] || $DATECMD -u +"%H:%M:%S "
 }
 
 # echo to stderr
@@ -212,7 +212,7 @@ ver() {
 }
 
 extractAndFormat() {
-  sed 's/.*\post(//' "${1}" | sed 's/);\w*$//' | jq .
+  $SEDCMD 's/.*\post(//' "${1}" | $SEDCMD 's/);\w*$//' | jq .
 }
 
 downloadUpdateCenter() {
@@ -244,8 +244,24 @@ cacheUpdateCenter() {
   fi
 }
 
+checkForMacGnuBinaries() {
+  # GNU Date accepts '--version', BSD date does not
+  DATECMD='date'
+  if command -v gdate &> /dev/null; then
+    DATECMD='gdate'
+  fi
+  $DATECMD --version &> /dev/null || die "Looks like you are on MacOS. Please install GNU date (e.g. with brew install core-utils)"
+  # GNU sed accepts '--version', BSD sed does not
+  SEDCMD='sed'
+  if command -v gsed &> /dev/null; then
+    SEDCMD='gsed'
+  fi
+  $SEDCMD --version &> /dev/null || die "Looks like you are on MacOS. Please install GNU sed (e.g. with brew install gnu-sed)"
+}
+
 prereqs() {
   [[ "${BASH_VERSION:0:1}" -lt 4 ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
+  checkForMacGnuBinaries
   for tool in awk yq jq curl; do
     command -v $tool &> /dev/null || die "You need to install $tool"
   done
@@ -764,7 +780,7 @@ processDepTree() {
   local directPrefix="${2:-}"
   local parentPrefix="${3:-}"
   local depList=
-  depList=$(sed -n "s/^${p}:\(.*\)/\1/p" "$DEPS_FILES" | xargs)
+  depList=$($SEDCMD -n "s/^${p}:\(.*\)/\1/p" "$DEPS_FILES" | xargs)
   if [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]-}" ]]; then
     debug "Already processed plugin '$p' ($directPrefix) ($parentPrefix) ($depList)"
     return 0
@@ -857,7 +873,7 @@ processDeps() {
         debug "${indent}Result - add third-party plugin: $p"
         TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
       fi
-      for dep in $(sed -n "s/^${p}:\(.*\)/\1/p" "$DEPS_FILES" | xargs); do
+      for dep in $($SEDCMD -n "s/^${p}:\(.*\)/\1/p" "$DEPS_FILES" | xargs); do
         # record ALL non-top-level plugins as dependencies for the categorisation afterwards
         if ! isProcessedDepNonTopLevel "$dep"; then
           TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$dep]="$dep"
@@ -1000,10 +1016,10 @@ createPluginCatalogAndPluginsYaml() {
       warn "Custom plugin found without a custom url."
       if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
         warn "Using provided PLUGIN_CATALOG_OFFLINE_URL_BASE"
-        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | $SEDCMD -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
       else
         warn "No PLUGIN_CATALOG_OFFLINE_URL_BASE provided. Using one based on the UC url (PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT)."
-        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
+        pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE_DEFAULT}" | $SEDCMD -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${customVersion}/g")
       fi
       addEntry "$pluginName" "url" "$pluginUrl" "$targetFile"
     fi
@@ -1018,7 +1034,7 @@ createPluginCatalogAndPluginsYaml() {
     # pluginUrl defaults to the official online url
     local pluginUrlOfficial="${TARGET_UC_ONLINE_ALL_WITH_URL_ARR[$pluginName]}"
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
-      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | sed -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
+      pluginUrl=$(echo "${PLUGIN_CATALOG_OFFLINE_URL_BASE}" | $SEDCMD -e "s/PNAME/${pluginName}/g" -e "s/PVERSION/${pluginVersion}/g")
     else
       pluginUrl="$pluginUrlOfficial"
     fi
@@ -1226,7 +1242,7 @@ addEntrySha256() {
 sortDepsByDepth() {
   local p='' matchedLines=''
   for p in $1; do
-    matchedLines=$(grep -oE ".* -> $p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" | sed -e 's/\ $//' | sort -u)
+    matchedLines=$(grep -oE ".* -> $p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE}" | $SEDCMD -e 's/\ $//' | sort -u)
     while IFS= read -r line; do
       echo "$(printf "%02d" "$(echo "$line" | grep -o " -> " | wc -l)") $line"
     done <<< "$matchedLines"
@@ -1250,7 +1266,7 @@ reducePluginList() {
     debug "====================================="
     while IFS= read -r pluginLineToCheck; do
       # go through the list of parents. if parent found in main list, remove any of its children
-      for parentToCheck in $(echo "$pluginLineToCheck" | sed -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
+      for parentToCheck in $(echo "$pluginLineToCheck" | $SEDCMD -e 's/^[0-9]* //' -e 's/ -> / /g' -e 's/\ [a-zA-Z0-9\-]*$//'); do
         if [[ -n "${TARGET_UC_ONLINE_THIRD_PARTY_PLUGINS_ARR[$parentToCheck]-}" ]]; then
           debug "Ignoring parent '$parentToCheck' since it is a 3rd party plugin."
           continue
@@ -1309,7 +1325,7 @@ removeFromReduceList() {
 
 getChildren() {
   echo "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$1]-}" \
-    | sed -e "s/^$1 -> //" -e 's/ -> /\n/g' \
+    | $SEDCMD -e "s/^$1 -> //" -e 's/ -> /\n/g' \
     | sort -u | xargs
 }
 
