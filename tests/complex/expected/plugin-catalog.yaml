@@ -10,7 +10,7 @@ configurations:
       ansicolor:
         version: "1.0.2"
       artifactory:
-        version: "4.0.0"
+        version: "4.0.3"
       aws-java-sdk:
         version: "1.12.406-374.v4cdf53953691"
       aws-java-sdk-cloudformation:
@@ -78,7 +78,7 @@ configurations:
       slack:
         version: "664.vc9a_90f8b_c24a_"
       swarm:
-        version: "3.42"
+        version: "3.44"
       throttle-concurrents:
         version: "2.13"
       uno-choice:

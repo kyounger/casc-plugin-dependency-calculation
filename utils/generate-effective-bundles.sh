@@ -23,6 +23,14 @@ loadDotenv() {
 WORKSPACE="${WORKSPACE:-${PWD}}"
 loadDotenv
 
+# minimal tool versions
+MIN_VER_YQ="4.35.2"
+
+# util function to test versions
+ver() {
+    echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
+}
+
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
 MINIMUM_PLUGINS_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and cloudbees-casc-items-controller if using items"
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
@@ -131,7 +139,35 @@ determineCIVersion() {
     CI_VERSION_DASHES="${CI_VERSION//\./-}"
 }
 
+checkForMacGnuBinaries() {
+    # GNU Date accepts '--version', BSD date does not
+    DATECMD='date'
+    if command -v gdate &> /dev/null; then
+        DATECMD='gdate'
+    fi
+    $DATECMD --version &> /dev/null || die "Looks like you are on MacOS. Please install GNU date (e.g. with brew install core-utils)"
+    # GNU sed accepts '--version', BSD sed does not
+    SEDCMD='sed'
+    if command -v gsed &> /dev/null; then
+        SEDCMD='gsed'
+    fi
+    $SEDCMD --version &> /dev/null || die "Looks like you are on MacOS. Please install GNU sed (e.g. with brew install gnu-sed)"
+}
+
+prereqs() {
+    [[ "${BASH_VERSION:0:1}" -lt 4 ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
+    checkForMacGnuBinaries
+    for tool in yq md5sum; do
+        command -v $tool &> /dev/null || die "You need to install $tool"
+    done
+    # yq version
+    local yqCurrentVersion=''
+    yqCurrentVersion=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" <<< "$(yq --version)")
+    [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqCurrentVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ'"
+}
+
 processVars() {
+    prereqs
     echo "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
     [ -f "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not a file"
@@ -279,7 +315,7 @@ generate() {
             tree "$targetDir"
         else
             echo "INFO: Resulting files created using poor man's tree..."
-            echo "$(cd "${targetDir}"; find . | sed -e "s/[^-][^\/]*\// |/g" -e "s/|\([^ ]\)/|-\1/")"
+            echo "$(cd "${targetDir}"; find . | $SEDCMD -e "s/[^-][^\/]*\// |/g" -e "s/|\([^ ]\)/|-\1/")"
         fi
         echo ""
         echo "INFO: Resulting bundle.yaml"
