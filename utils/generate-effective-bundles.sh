@@ -145,7 +145,7 @@ checkForMacGnuBinaries() {
     if command -v gdate &> /dev/null; then
         DATECMD='gdate'
     fi
-    $DATECMD --version &> /dev/null || die "Looks like you are on MacOS. Please install GNU date (e.g. with brew install core-utils)"
+    $DATECMD -u +"%H:%M:%S " &> /dev/null || die "Looks like you are on MacOS. Please install GNU date (e.g. with brew install core-utils)"
     # GNU sed accepts '--version', BSD sed does not
     SEDCMD='sed'
     if command -v gsed &> /dev/null; then
