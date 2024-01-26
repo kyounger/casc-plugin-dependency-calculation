@@ -21,6 +21,10 @@ loadDotenv() {
     fi
 }
 WORKSPACE="${WORKSPACE:-${PWD}}"
+if [ -n "$BUNDLE_SUB_DIR" ]; then
+    echo "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
+    WORKSPACE="${WORKSPACE}/${BUNDLE_SUB_DIR}"
+fi
 loadDotenv
 
 # minimal tool versions
@@ -30,6 +34,10 @@ MIN_VER_YQ="4.35.2"
 ver() {
     echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
 }
+
+die() { echo "$*"; exit 1; }
+
+debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
 
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
 MINIMUM_PLUGINS_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and cloudbees-casc-items-controller if using items"
@@ -75,10 +83,6 @@ if command -v cascdeps &> /dev/null; then
 elif [ -z "${DEP_TOOL:-}" ]; then
     DEP_TOOL="${PARENT_DIR}/run.sh"
 fi
-
-die() { echo "$*"; exit 1; }
-
-debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
 
 determineCIVersion() {
     CI_VERSION="${CI_VERSION:-}"
