@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Setting LC_ALL=C to avoid sorting issues with yq and locales
+export LC_ALL=C
+
 # load .env if present
 loadDotenv() {
     local dotEnvFile="${WORKSPACE}/.env"
@@ -21,7 +24,8 @@ loadDotenv() {
     fi
 }
 WORKSPACE="${WORKSPACE:-${PWD}}"
-if [ -n "$BUNDLE_SUB_DIR" ]; then
+# Add optional sub directory to workspace
+if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
     echo "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
     WORKSPACE="${WORKSPACE}/${BUNDLE_SUB_DIR}"
 fi
@@ -226,6 +230,14 @@ generate() {
         targetDirName="${bundleDirName}"
         targetDir="$EFFECTIVE_DIR/${targetDirName}"
         targetBundleYaml="${targetDir}/bundle.yaml"
+        # save the checksum of the current target bundle yaml
+        local checkSumFullActual=''
+        local checkSumPluginsActual=''
+        if [ -f "${targetBundleYaml}" ]; then
+            # check for checksum in bundle header
+            checkSumFullActual=$(yq '. | head_comment' "$targetBundleYaml" | xargs | cut -d'=' -f 2)
+            checkSumPluginsActual="${checkSumFullActual%-*}"
+        fi
         BUNDLE_PARENTS="$bundleDirName"
         findBundleChain "${bundleDir}"
         if [ -n "${bundleFilter}" ]; then
@@ -305,13 +317,13 @@ generate() {
             fi
         done
         # manage plugin catalog
-        replacePluginCatalog "$targetDir" "$CI_VERSION" "$targetBundleYaml"
+        replacePluginCatalog "$targetDir" "$CI_VERSION" "$targetBundleYaml" "$checkSumPluginsActual"
         # add description to the effective bundles
         bp=" (version: $CI_VERSION, inheritance: $BUNDLE_PARENTS)" yq -i '.description += strenv(bp)' "${targetBundleYaml}"
         # remove the parent and availabilityPattern from the effective bundles
         yq -i 'del(.parent)|del(.availabilityPattern)' "${targetBundleYaml}"
         # reinstate the checksum of bundle files to provide unique version which does change with git
-        checkSum=$(cd "${targetDir}" && find . -type f -exec md5sum {} + | LC_ALL=C sort | md5sum | cut -d' ' -f 1)
+        checkSum=$(cd "${targetDir}" && find . -type f -exec md5sum {} + |  sort | md5sum | cut -d' ' -f 1)
         c=$checkSum yq -i '.version = env(c)' "${targetBundleYaml}"
         echo ""
         if [ -n "$TREE_CMD" ]; then
@@ -332,6 +344,7 @@ replacePluginCatalog() {
     local bundleDir=$1
     local ciVersion=$2
     local targetBundleYaml=$3
+    local checkSumPluginsActual=$4
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
@@ -363,16 +376,9 @@ replacePluginCatalog() {
     # - see the bottom of this script for an example
     local checkSumEffectivePlugins=''
     local checkSumPluginsExpected=''
-    local checkSumFullActual=''
-    local checkSumPluginsActual=''
     local effectivePluginsList=''
     effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
     checkSumEffectivePlugins=$(echo "$effectivePluginsList" | md5sum | cut -d' ' -f 1)
-    if [ -f "${finalPluginCatalogYaml}" ]; then
-        # check for checksum in bundle header
-        checkSumFullActual=$(yq '. | head_comment' "$targetBundleYaml" | xargs | cut -d'=' -f 2)
-        checkSumPluginsActual="${checkSumFullActual%-*}"
-    fi
     checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
     local localDryRun="${DRY_RUN}"
@@ -588,6 +594,81 @@ createTestResources() {
         | sort -u > "${TEST_RESOURCES_CI_VERSIONS}"
 }
 
+runPrecommit() {
+    PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
+    $0 generate > "$PRE_COMMIT_LOG" 2>&1
+    # if we:
+    # - ran without recreating the plugin catalogs (DRY_RUN=1)
+    # - find changes to effective plugins directories
+    # then:
+    # - we need to update the plugin catalogs before checking...
+    ERROR_REPORT=''
+    ERROR_MSGS=''
+    CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
+    CACHED_PLUGINS_FILES=$(git diff --name-only --cached "${EFFECTIVE_DIR}"/**/plugins)
+    if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
+        echo ""
+        errMsg="CHANGED_PLUGINS_FILES: Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
+        ERROR_MSGS="${ERROR_MSGS}\n${errMsg}"
+        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_PLUGINS_FILES")
+    elif [ "$DRY_RUN" -ne 0 ] && [ -n "$CACHED_PLUGINS_FILES" ]; then
+        echo ""
+        echo "WARNING >>>> Cached plugin files found! Reminder to please ensure you recreated the plugin catalog using DRY_RUN=0"
+        echo "WARNING >>>> Cached plugin files found! Ignore this if you have recreated the plugin catalog."
+        echo ""
+    fi
+    # fail if non-cached diffs found in effective bundles
+    CHANGED_EFFECTIVE_DIR=$(git --no-pager diff --stat "$EFFECTIVE_DIR")
+    CHANGED_EFFECTIVE_DIR_FULL=$(git --no-pager diff "$EFFECTIVE_DIR")
+    if [ -n "${CHANGED_EFFECTIVE_DIR}" ]; then
+        errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
+    else
+        echo "No changes in effective-bundles"
+    fi
+    UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
+    if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
+        errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
+    else
+        echo "No unknown files in effective-bundles"
+    fi
+    # optional validation bundles
+    if [ -d "$VALIDATIONS_DIR" ]; then
+        CHANGED_VALIDATIONS_DIR=$(git --no-pager diff --stat "$VALIDATIONS_DIR")
+        CHANGED_VALIDATIONS_DIR_FULL=$(git --no-pager diff "$VALIDATIONS_DIR")
+        if [ -n "${CHANGED_VALIDATIONS_DIR}" ]; then
+            errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
+        else
+            echo "No changes in validations"
+        fi
+        UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
+        if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
+            errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
+        else
+            echo "No unknown files in validations"
+        fi
+    fi
+    if [ -n "${ERROR_MSGS}" ]; then
+        if [ "$DEBUG" -eq 1 ]; then
+            echo "SHOWING FULL $PRE_COMMIT_LOG"
+            cat "$PRE_COMMIT_LOG"
+            printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
+        fi;
+        echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
+        printf '%s\n\n' "$ERROR_MSGS"
+        die "Pre-commit run failed. See above."
+    else
+        echo "No error messages"
+    fi
+
+}
 
 # main
 ACTION="${1:-}"
@@ -595,78 +676,7 @@ echo "Looking for action '$ACTION'"
 case $ACTION in
     pre-commit)
         processVars
-        PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
-        $0 generate > "$PRE_COMMIT_LOG" 2>&1
-        # if we:
-        # - ran without recreating the plugin catalogs (DRY_RUN=1)
-        # - find changes to effective plugins directories
-        # then:
-        # - we need to update the plugin catalogs before checking...
-        ERROR_REPORT=''
-        ERROR_MSGS=''
-        CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
-        CACHED_PLUGINS_FILES=$(git diff --name-only --cached "${EFFECTIVE_DIR}"/**/plugins)
-        if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
-            echo ""
-            errMsg="CHANGED_PLUGINS_FILES: Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
-            ERROR_MSGS="${ERROR_MSGS}\n${errMsg}"
-            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_PLUGINS_FILES")
-        elif [ "$DRY_RUN" -ne 0 ] && [ -n "$CACHED_PLUGINS_FILES" ]; then
-            echo ""
-            echo "WARNING >>>> Cached plugin files found! Reminder to please ensure you recreated the plugin catalog using DRY_RUN=0"
-            echo "WARNING >>>> Cached plugin files found! Ignore this if you have recreated the plugin catalog."
-            echo ""
-        fi
-        # fail if non-cached diffs found in effective bundles
-        CHANGED_EFFECTIVE_DIR=$(git --no-pager diff --stat "$EFFECTIVE_DIR")
-        CHANGED_EFFECTIVE_DIR_FULL=$(git --no-pager diff "$EFFECTIVE_DIR")
-        if [ -n "${CHANGED_EFFECTIVE_DIR}" ]; then
-            errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
-        else
-            echo "No changes in effective-bundles"
-        fi
-        UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
-        if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
-            errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
-        else
-            echo "No unknown files in effective-bundles"
-        fi
-        # optional validation bundles
-        if [ -d "$VALIDATIONS_DIR" ]; then
-            CHANGED_VALIDATIONS_DIR=$(git --no-pager diff --stat "$VALIDATIONS_DIR")
-            CHANGED_VALIDATIONS_DIR_FULL=$(git --no-pager diff "$VALIDATIONS_DIR")
-            if [ -n "${CHANGED_VALIDATIONS_DIR}" ]; then
-                errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-                ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-                ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
-            else
-                echo "No changes in validations"
-            fi
-            UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
-            if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
-                errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-                ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-                ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
-            else
-                echo "No unknown files in validations"
-            fi
-        fi
-        if [ -n "${ERROR_MSGS}" ]; then
-            if [ "$DEBUG" -eq 1 ]; then
-                echo "SHOWING FULL $PRE_COMMIT_LOG"
-                cat "$PRE_COMMIT_LOG"
-                printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
-            fi;
-            echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
-            printf '%s\n\n' "$ERROR_MSGS"
-            die "Pre-commit run failed. See above."
-        else
-            echo "No error messages"
-        fi
+        runPrecommit
         ;;
     generate)
         processVars
@@ -701,7 +711,9 @@ case $ACTION in
     - all: running both plugins and then generate
     - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
     - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
-    - createTestResources: can be used in pipelines when vaildating bundles. creates bundle zips, list detected CI_VERSIONS, etc."
+    - createTestResources: can be used in pipelines when vaildating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
+
+    NOTE: If your bundles are separated into groups through sub-directories, use the BUNDLE_SUB_DIR environment variable to specify the sub-directory."
         ;;
 esac
 echo "Done"
