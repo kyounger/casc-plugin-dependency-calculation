@@ -74,7 +74,7 @@ configurations:
       resource-disposer:
         version: "0.23"
       robot:
-        version: "3.4.0"
+        version: "3.5.0"
       slack:
         version: "664.vc9a_90f8b_c24a_"
       swarm:
