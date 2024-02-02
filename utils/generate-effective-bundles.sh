@@ -24,7 +24,7 @@ loadDotenv() {
     fi
 }
 WORKSPACE="${WORKSPACE:-$(pwd)}"
-if [ -n "$BUNDLE_SUB_DIR" ]; then
+if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
     # check to see the workspace already includes the bundle sub dir
     if [[ $(basename "${WORKSPACE}") == "${BUNDLE_SUB_DIR}" ]]; then
         echo "INFO: BUNDLE_SUB_DIR already part of WORKSPACE: ${WORKSPACE}"
