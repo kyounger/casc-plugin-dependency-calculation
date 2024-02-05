@@ -14,6 +14,7 @@ RUN apk add --update --no-cache \
     findutils \
     git \
     zip \
+    make \
     && addgroup -S -g 1000 casc-user && adduser -S -u 1000 casc-user -G casc-user -s /bin/bash
 
 # kustomize and tools
