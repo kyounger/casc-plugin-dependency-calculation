@@ -48,7 +48,10 @@ die() { echo "$*"; exit 1; }
 debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
 
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
-MINIMUM_PLUGINS_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and cloudbees-casc-items-controller if using items"
+CI_TYPE="${CI_TYPE:-mm}"
+MINIMUM_PLUGINS_CASC_CONTROLLER="cloudbees-casc-items-controller"
+MINIMUM_PLUGINS_CASC_OC="cloudbees-casc-items-server cloudbees-casc-items-commons"
+MINIMUM_PLUGINS_CASC_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and, if using items, "
 BUNDLE_SECTIONS='jcasc items plugins catalog variables rbac'
 DRY_RUN="${DRY_RUN:-1}"
 # automatically update catalog if plugin yamls have changed. supercedes DRY_RUN
@@ -446,9 +449,17 @@ sanityCheckMinimumPlugins() {
     # - "cloudbees-casc-client" at a bare minimum
     # - "cloudbees-casc-items-controller" if the items
     echo "Sanity checking minimum plugins..."
-    testForEffectivePlugin "cloudbees-casc-client" "${effectivePluginsList}" || die "ERROR: Bundle '$(basename "${bundleDir}")' - $MINIMUM_PLUGINS_ERR"
+    local minimumPlugins="${MINIMUM_PLUGINS_CASC_CONTROLLER}"
+    if [ "oc" == "$CI_TYPE" ]; then
+        minimumPlugins="${MINIMUM_PLUGINS_CASC_OC}"
+    fi
+    local minimumPluginsErr=''
+    minimumPluginsErr="ERROR: Bundle '$(basename "${bundleDir}")' - ${MINIMUM_PLUGINS_CASC_ERR}${minimumPlugins}"
+    testForEffectivePlugin "cloudbees-casc-client" "${effectivePluginsList}" || die "$minimumPluginsErr"
     if yq -e '.|has("items")' "${targetBundleYaml}" &>/dev/null; then
-        testForEffectivePlugin "cloudbees-casc-items-controller" "${effectivePluginsList}" || die "ERROR: Bundle '$(basename "${bundleDir}")' - $MINIMUM_PLUGINS_ERR"
+        for minPlugin in $minimumPlugins; do
+            testForEffectivePlugin "$minPlugin" "${effectivePluginsList}" || die "$minimumPluginsErr"
+        done
     fi
 }
 
@@ -577,7 +588,6 @@ testForEffectivePlugin() {
 # TEST UTILS - FOR USE IN CI PIPELINES
 # TEST UTILS - FOR USE IN CI PIPELINES
 
-## Takes 1 arg (bundleName) - creates a <bundleName>.zip file in the root of WORKSPACE
 createTestResources() {
     mkdir -p "${TEST_RESOURCES_DIR}"
     for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
@@ -591,11 +601,22 @@ createTestResources() {
             echo "Created '${testValidationDir}/${bundle}.zip'"
         done
     done
+
     # Add a unique list of detected CI_VERSION values
-    yq --no-doc '.configurations[0].prerequisites.productVersion' \
-        "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*/plugin-catalog.yaml \
-        | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+    # - need to use the directory because the plugin-catalog.yaml may not exist
+    find "${VALIDATIONS_DIR}" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type d \
+        -name "${VALIDATIONS_BUNDLE_PREFIX}*" \
+        | grep -oE '([0-9]+\-[0-9]+\-[0-9]+\-[0-9])' \
+        | tr '-' '.' \
         | sort -u > "${TEST_RESOURCES_CI_VERSIONS}"
+    # sanity check
+    if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -ne 1 ]]; then
+        die "ERROR: Multiple or zero versions found in ${TEST_RESOURCES_CI_VERSIONS}. See below:
+        $(cat "${TEST_RESOURCES_CI_VERSIONS}")"
+    fi
 }
 
 runPrecommit() {
