@@ -21,8 +21,8 @@ PLUGIN_YAML_PATHS_FILES=()
 PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
 export PLUGIN_CATALOG_NAME="${PLUGIN_CATALOG_NAME:-"my-plugin-catalog"}"
-export PLUGIN_CATALOG_DESC="${PLUGIN_CATALOG_DESC:-"My Plugin Catalog"}"
-export PLUGIN_CATALOG_DESC_OFFLINE="${PLUGIN_CATALOG_DESC_OFFLINE:-"${PLUGIN_CATALOG_DESC} (offline)"}"
+export PLUGIN_CATALOG_DISPLAY_NAME="${PLUGIN_CATALOG_DISPLAY_NAME:-"My Plugin Catalog"}"
+export PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE="${PLUGIN_CATALOG_DISPLAY_NAME} (offline)"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK="${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}"
 PLUGIN_YAML_INCLUDE_HEADER="${PLUGIN_YAML_INCLUDE_HEADER:-1}"
 PLUGIN_YAML_COMMENTS_STYLE="${PLUGIN_YAML_COMMENTS_STYLE:-line}"
@@ -978,7 +978,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
-  yq -i '{ "type": "plugin-catalog", "version": "1", "name": strenv(PLUGIN_CATALOG_NAME), "displayName": strenv(PLUGIN_CATALOG_DESC), "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": strenv(PLUGIN_CATALOG_NAME), "displayName": strenv(PLUGIN_CATALOG_DISPLAY_NAME), "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   local customVersion customUrl
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
@@ -1009,7 +1009,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
-  yq -i '{ "type": "plugin-catalog", "version": "1", "name": strenv(PLUGIN_CATALOG_NAME), "displayName": strenv(PLUGIN_CATALOG_DESC_OFFLINE), "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": strenv(PLUGIN_CATALOG_NAME), "displayName": strenv(PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE), "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
     # accounting for custom plugins
