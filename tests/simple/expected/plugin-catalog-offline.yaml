@@ -1,7 +1,7 @@
 type: "plugin-catalog"
 version: "1"
 name: "my-plugin-catalog"
-displayName: "My Offline Plugin Catalog"
+displayName: "My Plugin Catalog (offline)"
 configurations:
   - description: "These are Non-CAP plugins for version 2.387.3.5"
     prerequisites:
