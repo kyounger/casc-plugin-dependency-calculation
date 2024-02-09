@@ -409,7 +409,21 @@ replacePluginCatalog() {
     if [ "$localDryRun" -eq 0 ]; then
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
+        local bundleDirName=''
+        bundleDirName=$(basename "$bundleDir")
+        export PLUGIN_CATALOG_NAME="${bundleDirName}-plugin-catalog"
+        export PLUGIN_CATALOG_DISPLAY_NAME=''
+        # Replace non-alphanumeric characters with spaces
+        PLUGIN_CATALOG_DISPLAY_NAME=$(echo "$PLUGIN_CATALOG_NAME" | tr -c '[:alnum:]' ' ')
+        # Capitalize each word
+        local str=''
+        for w in $PLUGIN_CATALOG_DISPLAY_NAME; do
+            str+=" ${w^}"
+        done
+        PLUGIN_CATALOG_DISPLAY_NAME="${str:1}" # Remove leading space
+        export PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE="${PLUGIN_CATALOG_DISPLAY_NAME} (offline)"
         "${DEP_TOOL_CMD[@]}"
+        unset PLUGIN_CATALOG_NAME PLUGIN_CATALOG_DISPLAY_NAME PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
