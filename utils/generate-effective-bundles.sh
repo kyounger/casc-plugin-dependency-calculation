@@ -695,10 +695,27 @@ runPrecommit() {
 
 }
 
+checkForLatestVersion() {
+    local currentTag="${1-}"
+    currentTag="${currentTag//*:/}"
+    local latestVersion=''
+    latestVersion=$(curl -s "https://api.github.com/repos/kyounger/casc-plugin-dependency-calculation/releases/latest" | grep -oE "tag_name\": \"v[0-9]+\.[0-9]+\.[0-9]+\"" | cut -d'"' -f 3)
+    echo "Latest version of configuration-as-code-plugin is $latestVersion"
+    if [ -n "$currentTag" ]; then
+        if [ "$(ver "${latestVersion}")" -gt "$(ver "${currentTag}")" ]; then
+            die "There is a newer version of casc-plugin-dependency-calculation available ($latestVersion). Please upgrade your version '$currentTag'."
+        fi
+    fi
+}
+
 # main
 ACTION="${1:-}"
-echo "Looking for action '$ACTION'"
+debug "Looking for action '$ACTION'"
 case $ACTION in
+    versionCheck)
+        shift
+        checkForLatestVersion "$@"
+        ;;
     pre-commit)
         processVars
         runPrecommit
@@ -741,7 +758,7 @@ case $ACTION in
     NOTE: If your bundles are separated into groups through sub-directories, use the BUNDLE_SUB_DIR environment variable to specify the sub-directory."
         ;;
 esac
-echo "Done"
+debug "Done"
 
 # Example: unique plugins
 #
