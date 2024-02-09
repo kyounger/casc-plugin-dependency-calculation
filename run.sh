@@ -20,6 +20,9 @@ CI_TYPE="${CI_TYPE:-mm}"
 PLUGIN_YAML_PATHS_FILES=()
 PLUGIN_YAML_PATHS_IDX=0
 PLUGIN_YAML_PATH="plugins.yaml"
+export PLUGIN_CATALOG_NAME="${PLUGIN_CATALOG_NAME:-"my-plugin-catalog"}"
+export PLUGIN_CATALOG_DESC="${PLUGIN_CATALOG_DESC:-"My Plugin Catalog"}"
+export PLUGIN_CATALOG_DESC_OFFLINE="${PLUGIN_CATALOG_DESC_OFFLINE:-"${PLUGIN_CATALOG_DESC} (offline)"}"
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK="${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}"
 PLUGIN_YAML_INCLUDE_HEADER="${PLUGIN_YAML_INCLUDE_HEADER:-1}"
 PLUGIN_YAML_COMMENTS_STYLE="${PLUGIN_YAML_COMMENTS_STYLE:-line}"
@@ -303,6 +306,8 @@ setScriptVars() {
   FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN="${FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN:-}"
   FINAL_TARGET_PLUGIN_CATALOG="${FINAL_TARGET_PLUGIN_CATALOG:-}"
   FINAL_TARGET_PLUGIN_CATALOG_OFFLINE="${FINAL_TARGET_PLUGIN_CATALOG_OFFLINE:-}"
+  # final include '---' or not
+  LEADING_DOCUMENT_SEPARATOR="${LEADING_DOCUMENT_SEPARATOR:-}"
 
   # check for multiple source files
   if [ ${#PLUGIN_YAML_PATHS_FILES[@]} -eq 0 ]; then
@@ -973,7 +978,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate plugin-catalog"
   local targetFile="${TARGET_PLUGIN_CATALOG}"
   touch "${targetFile}"
-  yq -i '{ "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": strenv(PLUGIN_CATALOG_NAME), "displayName": strenv(PLUGIN_CATALOG_DESC), "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   local customVersion customUrl
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
@@ -1004,7 +1009,7 @@ createPluginCatalogAndPluginsYaml() {
   info "Recreate OFFLINE plugin-catalog plugins to plugin-cache...($PLUGINS_CACHE_DIR)"
   targetFile="${TARGET_PLUGIN_CATALOG_OFFLINE}"
   touch "${targetFile}"
-  yq -i '{ "type": "plugin-catalog", "version": "1", "name": "my-plugin-catalog", "displayName": "My Offline Plugin Catalog", "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
+  yq -i '{ "type": "plugin-catalog", "version": "1", "name": strenv(PLUGIN_CATALOG_NAME), "displayName": strenv(PLUGIN_CATALOG_DESC_OFFLINE), "configurations": [ { "description": strenv(descriptionVer), "prerequisites": { "productVersion": strenv(productVersion) }, "includePlugins": {}}]}' "${targetFile}"
   # Add the custom plugins first
   for pluginName in "${ANNOTATION_CUSTOM_PLUGINS_ARR[@]}"; do
     # accounting for custom plugins
@@ -1078,8 +1083,8 @@ createPluginCatalogAndPluginsYaml() {
   fi
 
   # final target stuff
-  [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || cp -v "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
-  [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || cp -v "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
+  [ -z "$FINAL_TARGET_PLUGIN_CATALOG" ] || copyWithOptionalPrepend "${TARGET_PLUGIN_CATALOG}" "$FINAL_TARGET_PLUGIN_CATALOG"
+  [ -z "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE" ] || copyWithOptionalPrepend "${TARGET_PLUGIN_CATALOG_OFFLINE}" "$FINAL_TARGET_PLUGIN_CATALOG_OFFLINE"
 
   if [ "${SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY:-}" -eq 1 ]; then
     info "ATTENTION: Plugin catalog creation only finished! Exiting..."
@@ -1226,10 +1231,30 @@ Plugin Categories:
   fi
 
   # final target stuff
-  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || cp -v "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
-  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL"
-  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN" ] || cp -v "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN"
+  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH" ] || copyWithOptionalPrepend "${TARGET_PLUGINS_YAML}" "$FINAL_TARGET_PLUGIN_YAML_PATH"
+  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL" ] || copyWithOptionalPrepend "${TARGET_PLUGINS_YAML_MINIMAL}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL"
+  [ -z "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN" ] || copyWithOptionalPrepend "${TARGET_PLUGINS_YAML_MINIMAL_GEN}" "$FINAL_TARGET_PLUGIN_YAML_PATH_MINIMAL_GEN"
 
+}
+
+copyWithOptionalPrepend() {
+  local srcFile=$1
+  local targetFile=$2
+  if [ -f "$srcFile" ]; then
+    if [ -n "${LEADING_DOCUMENT_SEPARATOR}" ]; then
+      # Check if the marker is already at the beginning of the file
+      if [[ $(head -n 1 "$srcFile") != "$LEADING_DOCUMENT_SEPARATOR" ]]; then
+        # Prepend the marker to the file
+        echo -e "${LEADING_DOCUMENT_SEPARATOR}\n$(cat "$srcFile")" > "$srcFile"
+        echo "Document separator '---' prepended to $srcFile"
+      else
+        echo "Marker already exists in $srcFile"
+      fi
+    fi
+    cp -v "$srcFile" "$targetFile"
+  else
+    warn "File '$srcFile' does not exist. Skipping..."
+  fi
 }
 
 addEntrySha256() {
