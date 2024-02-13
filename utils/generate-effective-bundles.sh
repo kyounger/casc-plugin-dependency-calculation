@@ -23,8 +23,23 @@ loadDotenv() {
         fi
     fi
 }
+
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 WORKSPACE="${WORKSPACE:-$(pwd)}"
+if [ -z "${GIT_ROOT}" ]; then
+    echo "WARN: Could not determine GIT_ROOT. Using WORKSPACE as root."
+    GIT_ROOT="${WORKSPACE}"
+fi
+if [ "${WORKSPACE}" != "${GIT_ROOT}" ]; then
+    BUNDLE_SUB_DIR="${WORKSPACE#"${GIT_ROOT}"/}"
+    echo "INFO: Setting BUNDLE_SUB_DIR to ${BUNDLE_SUB_DIR}"
+fi
+
+VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
+VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
 if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
+    # set the prefix to include the bundle sub dir
+    VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
     # check to see the workspace already includes the bundle sub dir
     if [[ $(basename "${WORKSPACE}") == "${BUNDLE_SUB_DIR}" ]]; then
         echo "INFO: BUNDLE_SUB_DIR already part of WORKSPACE: ${WORKSPACE}"
@@ -68,7 +83,6 @@ VALIDATIONS_DIR="${WORKSPACE}/validation-bundles"
 RAW_DIR="${WORKSPACE}/raw-bundles"
 
 TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
-VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX:-val-}"
 VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
 CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
 export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${WORKSPACE}/target"}"
@@ -231,6 +245,13 @@ findBundleChain() {
 
 generate() {
     local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
+
+    # one off rename of bundle.yaml to raw.bundle.yaml (otherwise the OC complains about the duplicate bundles :-()
+    if [ -f "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}/bundle.yaml" ]; then
+        echo "Renaming bundle.yaml to raw.bundle.yaml (this is a one-off)"
+        mv "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}/bundle.yaml" "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}/raw.bundle.yaml"
+    fi
+
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
@@ -520,6 +541,10 @@ cleanupUnusedBundles() {
     done
     echo "Running clean up validation bundles if present..."
     if [ -d "$VALIDATIONS_DIR" ]; then
+        if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
+            # remove legacy validation bundles
+            rm -rf "${VALIDATIONS_DIR:?}/${VALIDATIONS_BUNDLE_PREFIX_ORIG:?}${CI_VERSION_DASHES:?}"*
+        fi
         # Validations
         for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
             [[ -d "$d" ]] || break
@@ -577,6 +602,7 @@ createValidation() {
             echo "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
             rm -rf "${validationDir}"
             cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
+            mv "${validationDir}/"*bundle.yaml "${validationDir}/bundle.yaml"
             local valPluginsYaml="${validationDir}/plugins.yaml"
             touch "${valPluginsYaml}"
             pl="$effectivePluginsList" yq -i '.plugins = env(pl)' "${valPluginsYaml}"
