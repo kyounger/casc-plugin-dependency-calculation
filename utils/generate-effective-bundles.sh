@@ -810,6 +810,7 @@ case $ACTION in
         processVars "${@}"
         ;;
     createTestResources) # can be used in pipelines when vaildating bundles
+        processVars "${@}"
         createTestResources
         ;;
     *)
