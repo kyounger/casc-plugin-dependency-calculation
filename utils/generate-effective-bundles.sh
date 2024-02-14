@@ -7,9 +7,9 @@ export LC_ALL=C
 
 # load .env if present
 loadDotenv() {
-    local dotEnvFile="${WORKSPACE}/.env"
+    local dotEnvFile="${1:-"${WORKSPACE}"}/.env"
     if [ -f "${dotEnvFile}" ]; then
-        echo "INFO: Found .env- sourcing the file: ${WORKSPACE}/.env"
+        echo "INFO: Found .env- sourcing the file: ${dotEnvFile}"
         # check for allexport...
         if [ "$-" = "${-%a*}" ]; then
             # allexport is not set
@@ -47,6 +47,8 @@ if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
         echo "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
         WORKSPACE="${WORKSPACE}/${BUNDLE_SUB_DIR}"
     fi
+    # load .env in parent dir if present
+    loadDotenv "$(basedir "${WORKSPACE}")"
 fi
 loadDotenv
 
@@ -85,8 +87,8 @@ RAW_DIR="${WORKSPACE}/raw-bundles"
 TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
 VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
 CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
-export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${WORKSPACE}/target"}"
-export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${WORKSPACE}/.cache"}"
+export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${GIT_ROOT}/target"}"
+export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${GIT_ROOT}/.cache"}"
 
 # optional kustomization.yaml creation
 KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
@@ -793,7 +795,7 @@ case $ACTION in
     - all: running both plugins and then generate
     - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
     - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
-    - createTestResources: can be used in pipelines when vaildating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
+    - createTestResources: can be used in pipelines when validating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
 
     NOTE: If your bundles are separated into groups through sub-directories, use the BUNDLE_SUB_DIR environment variable to specify the sub-directory."
         ;;
