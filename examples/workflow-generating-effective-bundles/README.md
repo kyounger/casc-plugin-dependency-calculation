@@ -5,7 +5,11 @@
 
 - [Intro](#intro)
 - [Scripts and example files](#scripts-and-example-files)
+  - [Simple Structure](#simple-structure)
+  - [Environment based structure using `BUNDLE_SUB_DIR`](#environment-based-structure-using-bundle_sub_dir)
 - [Filtering](#filtering)
+  - [Tab completion for filtering](#tab-completion-for-filtering)
+  - [Example](#example)
 - [Debugging](#debugging)
 - [Integration with pre-commit](#integration-with-pre-commit)
 - [Automatic detection of the `CI_VERSION`](#automatic-detection-of-the-ci_version)
@@ -61,7 +65,56 @@ The directories in this example are:
 - `raw-bundles`: this directory holds the bundles in their raw form
 - `effective-bundles`: TO BE CREATED, this directory holds the bundles in their effective form
 
+### Simple Structure
+
+Imagine the following structure.
+
+```mono
+bundles
+├── raw-bundles
+│   ├── admin-prod
+│   ├── base-prod
+│   ├── bundle-a-prod
+└── .env
+```
+
+### Environment based structure using `BUNDLE_SUB_DIR`
+
+You can also put bundles into groups if you need to handle them slightly differently.
+
+Imagine the following structure for `test` and `prod` environments.
+
+```mono
+bundles
+├── prod
+│   ├── raw-bundles
+│   │   ├── admin-prod
+│   │   ├── base-prod
+│   │   ├── bundle-a-prod
+│   └── .env
+├── test
+│   ├── raw-bundles
+│   │   ├── admin
+│   │   ├── base
+│   │   ├── bundle-a
+│   └── .env
+└── .env
+```
+
+Configuration:
+
+- global configuration in the `.env` at root level
+- environment specific overrides in the `.env` at the environment level
+
+Commands are performed by either:
+
+- navigating to the directory containing the raw-bundles directory
+- using the `BUNDLE_SUB_DIR` environment variable
+- using the filtering option (see below)
+
 ## Filtering
+
+**NOTE:** the bundle filter will take into consider all children of a bundle. Filtering by a parent will therefore automatically perform actions on all children.
 
 Both the `plugins` and the `generate` actions have two optional positional arguments which can be used for filtering so that:
 
@@ -69,12 +122,48 @@ Both the `plugins` and the `generate` actions have two optional positional argum
 cascgen <ACTION> <BUNDLE_FILTER>
 ```
 
-**NOTE:** the bundle filter will take into consider all children of a bundle. Filtering by a parent will therefore automatically perform actions on all children
-
-The following scenarios can be achieved:
+At the raw-bundles level, the following scenarios can be achieved:
 
 - `cascgen <ACTION>` - all bundles
 - `cascgen <ACTION> controller-c` - `controller-c` and child bundles, if any
+- `cascgen <ACTION> raw-bundles/controller-c` - `controller-c` and child bundles, if any
+
+In a multilayered structure, the following scenarios can be achieved:
+
+- `cascgen <ACTION> prod` - all bundles in the prod sub directory
+- `cascgen <ACTION> prod/raw-bundles/bundle-a` - `bundle-a` and child bundles, if any
+- `cascgen <ACTION> prod` - `controller-c` and child bundles, if any
+
+### Tab completion for filtering
+
+**NOTE:** the optional `raw-bundles` in filters such as `raw-bundles/bundle-a` or `prod/raw-bundles/bundle-a` allows tabbing to filter.
+
+This means you type things like `cascgen generate`, then `<TAB>` to set a filter.
+
+### Example
+
+You can filtering when running the new debugging `vars` action. Look at the `Filtering - ...` messages below.
+
+```mono
+❯ cascgen vars prod/raw-bundles/admin-prod
+INFO: Filtering - BUNDLE_FILTER set to 'admin-prod' (from 'prod/raw-bundles/admin-prod')
+INFO: Filtering - BUNDLE_SUB_DIR set to 'prod' (from 'prod/raw-bundles/admin-prod')
+INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: /path/to/casc-bundles/prod
+INFO: Found .env sourcing the file: /path/to/casc-bundles/prod/.env
+Setting some vars...
+INFO: Testing CI_VERSION according to parent of RAW_DIR...
+INFO: Testing CI_VERSION according to GIT_BRANCH env var...
+INFO: Testing CI_VERSION according to git branch from command...
+INFO: Setting CI_VERSION according to git branch from command (-> 2.426.3.3).
+Running with:
+    DEP_TOOL=/home/sboardwell/bin/cascdeps
+    TARGET_BASE_DIR=/path/to/casc-bundles/target
+    CACHE_BASE_DIR=/path/to/casc-bundles/.cache
+    RAW_DIR=/path/to/casc-bundles/prod/raw-bundles
+    EFFECTIVE_DIR=/path/to/casc-bundles/prod/effective-bundles
+    BUNDLE_FILTER=admin-prod
+    CI_VERSION=2.426.3.3
+```
 
 ## Debugging
 

@@ -7,9 +7,9 @@ export LC_ALL=C
 
 # load .env if present
 loadDotenv() {
-    local dotEnvFile="${WORKSPACE}/.env"
+    local dotEnvFile="${1:-"${WORKSPACE}"}/.env"
     if [ -f "${dotEnvFile}" ]; then
-        echo "INFO: Found .env- sourcing the file: ${WORKSPACE}/.env"
+        echo "INFO: Found .env sourcing the file: ${dotEnvFile}"
         # check for allexport...
         if [ "$-" = "${-%a*}" ]; then
             # allexport is not set
@@ -24,34 +24,55 @@ loadDotenv() {
     fi
 }
 
-GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
-WORKSPACE="${WORKSPACE:-$(pwd)}"
-if [ -z "${GIT_ROOT}" ]; then
-    echo "WARN: Could not determine GIT_ROOT. Using WORKSPACE as root."
-    GIT_ROOT="${WORKSPACE}"
-fi
-if [ "${WORKSPACE}" != "${GIT_ROOT}" ]; then
-    BUNDLE_SUB_DIR="${WORKSPACE#"${GIT_ROOT}"/}"
-    echo "INFO: Setting BUNDLE_SUB_DIR to ${BUNDLE_SUB_DIR}"
-fi
-
-VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
-VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
-if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
-    # set the prefix to include the bundle sub dir
-    VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
-    # check to see the workspace already includes the bundle sub dir
-    if [[ $(basename "${WORKSPACE}") == "${BUNDLE_SUB_DIR}" ]]; then
-        echo "INFO: BUNDLE_SUB_DIR already part of WORKSPACE: ${WORKSPACE}"
-    else
-        echo "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
-        WORKSPACE="${WORKSPACE}/${BUNDLE_SUB_DIR}"
+setDirs() {
+    GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+    WORKSPACE="${WORKSPACE:-$(pwd)}"
+    if [ -z "${GIT_ROOT}" ]; then
+        echo "WARN: Could not determine GIT_ROOT. Using WORKSPACE as root."
+        GIT_ROOT="${WORKSPACE}"
     fi
-fi
-loadDotenv
+    if [ "${WORKSPACE}" != "${GIT_ROOT}" ]; then
+        BUNDLE_SUB_DIR="${WORKSPACE#"${GIT_ROOT}"/}"
+        echo "INFO: Setting BUNDLE_SUB_DIR to ${BUNDLE_SUB_DIR}"
+    fi
 
-# minimal tool versions
-MIN_VER_YQ="4.35.2"
+    VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
+    VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
+    if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
+        # set the prefix to include the bundle sub dir
+        VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
+        # check to see the workspace already includes the bundle sub dir
+        if [[ $(basename "${WORKSPACE}") == "${BUNDLE_SUB_DIR}" ]]; then
+            echo "INFO: BUNDLE_SUB_DIR already part of WORKSPACE: ${WORKSPACE}"
+        else
+            echo "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
+            WORKSPACE="${WORKSPACE}/${BUNDLE_SUB_DIR}"
+        fi
+        # load .env in parent dir if present
+        local parentDir=''
+        parentDir=$(dirname "${WORKSPACE}")
+        loadDotenv "$parentDir"
+    fi
+    loadDotenv
+
+    # assuming some variables - can be overwritten
+    TEST_RESOURCES_DIR="${WORKSPACE}/test-resources"
+    EFFECTIVE_DIR="${WORKSPACE}/effective-bundles"
+    VALIDATIONS_DIR="${WORKSPACE}/validation-bundles"
+    RAW_DIR="${WORKSPACE}/raw-bundles"
+
+    TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
+    VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
+    CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
+    export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${GIT_ROOT}/target"}"
+    export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${GIT_ROOT}/.cache"}"
+
+    # optional kustomization.yaml creation
+    KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
+    if [ -f "${KUSTOMIZATION_YAML}" ]; then
+        command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
+    fi
+}
 
 # util function to test versions
 ver() {
@@ -61,6 +82,9 @@ ver() {
 die() { echo "$*"; exit 1; }
 
 debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
+
+# minimal tool versions
+MIN_VER_YQ="4.35.2"
 
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
 CI_TYPE="${CI_TYPE:-mm}"
@@ -75,24 +99,6 @@ DEBUG="${DEBUG:-0}"
 TREE_CMD=$(command -v tree || true)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
-
-# assuming some variables - can be overwritten
-TEST_RESOURCES_DIR="${WORKSPACE}/test-resources"
-EFFECTIVE_DIR="${WORKSPACE}/effective-bundles"
-VALIDATIONS_DIR="${WORKSPACE}/validation-bundles"
-RAW_DIR="${WORKSPACE}/raw-bundles"
-
-TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
-VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
-CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
-export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${WORKSPACE}/target"}"
-export CACHE_BASE_DIR="${CACHE_BASE_DIR:-"${WORKSPACE}/.cache"}"
-
-# optional kustomization.yaml creation
-KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
-if [ -f "${KUSTOMIZATION_YAML}" ]; then
-    command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
-fi
 
 # CI_VERSION env var set, no detection necessary. Otherwise,
 # version detection (detected in the following order):
@@ -119,14 +125,14 @@ determineCIVersion() {
         # test parent dir
         echo "INFO: Testing CI_VERSION according to parent of RAW_DIR..."
         if [[ "$versionDirName" =~ $CI_DETECTION_PATTERN ]]; then
-            echo "INFO: Setting CI_VERSION according to parent of RAW_DIR."
             CI_VERSION="${BASH_REMATCH[1]}"
+            echo "INFO: Setting CI_VERSION according to parent of RAW_DIR (-> $CI_VERSION)."
         fi
         if [ -z "$CI_VERSION" ]; then
             echo "INFO: Testing CI_VERSION according to GIT_BRANCH env var..."
             if [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
-                echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var."
                 CI_VERSION="${BASH_REMATCH[1]}"
+                echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var (-> $CI_VERSION)."
             fi
         fi
         if [ -z "$CI_VERSION" ]; then
@@ -135,8 +141,8 @@ determineCIVersion() {
                 local gitBranch=''
                 gitBranch=$(git rev-parse --abbrev-ref HEAD)
                 if [[ "$gitBranch" =~ $CI_DETECTION_PATTERN ]]; then
-                    echo "INFO: Setting CI_VERSION according to git branch from command."
                     CI_VERSION="${BASH_REMATCH[1]}"
+                    echo "INFO: Setting CI_VERSION according to git branch from command (-> $CI_VERSION)."
                 fi
             fi
         fi
@@ -148,8 +154,8 @@ determineCIVersion() {
                     local knownVersion=''
                     knownVersion=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
                     if [[ "$knownVersion" =~ $CI_TEST_PATTERN ]]; then
-                        echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}."
                         CI_VERSION="${BASH_REMATCH[1]}"
+                        echo "INFO: Setting CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS} (-> $CI_VERSION)."
                     fi
                 else
                     echo "WARN: Multiple versions found in ${TEST_RESOURCES_CI_VERSIONS}. Not setting anything."
@@ -161,7 +167,7 @@ determineCIVersion() {
             die "Could not determine a CI_VERSION."
         fi
     else
-        echo "INFO: Setting CI_VERSION according to CI_VERSION env var."
+        echo "INFO: Setting CI_VERSION according to CI_VERSION env var (-> $CI_VERSION)."
     fi
     [[ "${CI_VERSION}" =~ $CI_TEST_PATTERN ]] || die "CI_VERSION '${CI_VERSION}' is not a valid version."
     # set the version with dashes for later use
@@ -196,7 +202,27 @@ prereqs() {
 }
 
 processVars() {
+    local bundleFilter="${1:-}"
+    BUNDLE_FILTER=''
+    if [ -n "${bundleFilter}" ]; then
+        if [[ "$bundleFilter" =~ ^raw-bundles\/.* ]]; then
+            BUNDLE_FILTER="${bundleFilter#raw-bundles/}"
+            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
+            echo "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
+        elif [[ "$bundleFilter" =~ .*\/raw-bundles\/.* ]]; then
+            BUNDLE_SUB_DIR="${bundleFilter//\/raw-bundles*/}"
+            BUNDLE_FILTER="${bundleFilter#*raw-bundles/}"
+            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
+            echo "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
+            echo "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
+        elif [ -d "${bundleFilter}/raw-bundles" ]; then
+            BUNDLE_SUB_DIR="${bundleFilter}"
+            echo "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
+        fi
+    fi
+    setDirs
     prereqs
+
     echo "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
     [ -f "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not a file"
@@ -210,6 +236,7 @@ processVars() {
     CACHE_BASE_DIR=$CACHE_BASE_DIR
     RAW_DIR=$RAW_DIR
     EFFECTIVE_DIR=$EFFECTIVE_DIR
+    BUNDLE_FILTER=$BUNDLE_FILTER
     CI_VERSION=$CI_VERSION"
 }
 
@@ -244,7 +271,7 @@ findBundleChain() {
 }
 
 generate() {
-    local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
+    local bundleFilter="${BUNDLE_FILTER:-}"
 
     # one off rename of bundle.yaml to raw.bundle.yaml (otherwise the OC complains about the duplicate bundles :-()
     if [ -f "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}/bundle.yaml" ]; then
@@ -500,7 +527,7 @@ sanityCheckMinimumPlugins() {
 
 ## create plugin commands
 plugins() {
-    local bundleFilter="${1:-${BUNDLE_FILTER:-}}"
+    local bundleFilter="${BUNDLE_FILTER:-}"
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
@@ -750,38 +777,37 @@ checkForLatestVersion() {
 
 # main
 ACTION="${1:-}"
+shift
 debug "Looking for action '$ACTION'"
 case $ACTION in
     versionCheck)
-        shift
         checkForLatestVersion "$@"
         ;;
     pre-commit)
-        processVars
+        processVars "${@}"
         runPrecommit
         ;;
     generate)
-        processVars
-        shift
-        generate "${@}"
+        processVars "${@}"
+        generate
         ;;
     plugins)
-        processVars
-        shift
-        plugins "${@}"
+        processVars "${@}"
+        plugins
         ;;
     force)
         export DRY_RUN=0 REFRESH_UC=1
-        processVars
-        shift
-        plugins "${@}"
-        generate "${@}"
+        processVars "${@}"
+        plugins
+        generate
         ;;
     all)
-        processVars
-        shift
-        plugins "${@}"
-        generate "${@}"
+        processVars "${@}"
+        plugins
+        generate
+        ;;
+    vars)
+        processVars "${@}"
         ;;
     createTestResources) # can be used in pipelines when vaildating bundles
         createTestResources
@@ -793,7 +819,7 @@ case $ACTION in
     - all: running both plugins and then generate
     - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
     - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
-    - createTestResources: can be used in pipelines when vaildating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
+    - createTestResources: can be used in pipelines when validating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
 
     NOTE: If your bundles are separated into groups through sub-directories, use the BUNDLE_SUB_DIR environment variable to specify the sub-directory."
         ;;
