@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - master
+    paths:
+    - 'tests'
+    - 'utils'
+    - 'run.sh'
   pull_request:
     branches:
       - master
