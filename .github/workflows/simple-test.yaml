@@ -24,7 +24,7 @@ jobs:
       - run: echo "🖥️ The workflow is now ready to test your code on the runner."
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       -
         name: Build Docker image
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
