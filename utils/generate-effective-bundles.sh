@@ -38,7 +38,7 @@ setDirs() {
 
     VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
     VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
-    [ "${BUNDLE_SUB_DIR}" != '.' ] || BUNDLE_SUB_DIR=''
+    [ "${BUNDLE_SUB_DIR:-}" != '.' ] || BUNDLE_SUB_DIR=''
     if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
         # set the prefix to include the bundle sub dir
         VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
