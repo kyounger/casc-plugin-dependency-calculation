@@ -38,6 +38,7 @@ setDirs() {
 
     VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
     VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
+    [ "${BUNDLE_SUB_DIR}" != '.' ] || BUNDLE_SUB_DIR=''
     if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
         # set the prefix to include the bundle sub dir
         VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
@@ -72,11 +73,11 @@ setDirs() {
 
     # optional kustomization.yaml creation
     KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
-    if [ -f "${KUSTOMIZATION_YAML}" ]; then
-        command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
-    fi
 }
 
+kustomizeCmdCheck() {
+    command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
+}
 # util function to test versions
 ver() {
     echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
@@ -607,6 +608,7 @@ cleanupUnusedBundles() {
     fi
     echo "Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
     if [ -f "${KUSTOMIZATION_YAML}" ]; then
+        kustomizeCmdCheck
         echo -n > "${KUSTOMIZATION_YAML}"
         (cd "$EFFECTIVE_DIR" && {
             local bundles=''
@@ -937,6 +939,7 @@ getTestResultReport() {
 applyBundleConfigMaps()
 {
     local headSha='' configMaps=''
+    kustomizeCmdCheck
     headSha=$(git rev-parse HEAD)
     echo "Adding current git sha and CI_VERSION to the kustomize configuration..."
     [ -n "$headSha" ] || die "The current git sha is empty."
