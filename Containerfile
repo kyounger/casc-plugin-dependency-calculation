@@ -15,7 +15,8 @@ RUN apk add --update --no-cache \
     git \
     zip \
     make \
-    && addgroup -S -g 1000 casc-user && adduser -S -u 1000 casc-user -G casc-user -s /bin/bash
+    && addgroup -S -g 1000 casc-user && adduser -S -u 1000 casc-user -G casc-user -s /bin/bash \
+    && mkdir -p /home/casc-user/bin && chown -R casc-user:casc-user /home/casc-user/bin
 
 # kustomize and tools
 RUN curl -sLO https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_${ARCH}.tar.gz && \
@@ -30,7 +31,8 @@ ADD  --chmod=655 https://github.com/jqlang/jq/releases/download/${JQ_VERSION}/jq
 WORKDIR /home/casc-user
 ENV CACHE_DIR=/tmp/pimt-cache \
     CACHE_BASE_DIR=/tmp/casc-plugin-dependency-calculation-cache \
-    TARGET_BASE_DIR=/tmp/casc-plugin-dependency-calculation-target
+    TARGET_BASE_DIR=/tmp/casc-plugin-dependency-calculation-target \
+    PATH="/home/casc-user/bin:$PATH"
 
 # scripts
 COPY run.sh /usr/local/bin/cascdeps

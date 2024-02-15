@@ -64,7 +64,6 @@ setDirs() {
     TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
     TEST_RESOURCES_CHANGED_FILES="${TEST_RESOURCES_DIR}/.changed-files"
     TEST_RESOURCES_CHANGED_BUNDLES="${TEST_RESOURCES_DIR}/.changed-effective-bundles"
-    touch "${TEST_RESOURCES_CHANGED_FILES}" "${TEST_RESOURCES_CHANGED_BUNDLES}"
 
     VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
     CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
@@ -969,6 +968,7 @@ applyBundleConfigMaps()
 
 createTestResources() {
     mkdir -p "${TEST_RESOURCES_DIR}"
+    touch "${TEST_RESOURCES_CHANGED_FILES}" "${TEST_RESOURCES_CHANGED_BUNDLES}"
     for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
         for bundle in $(yq '. | head_comment' "${d}/plugins.yaml"); do
             local testValidationDir=''
