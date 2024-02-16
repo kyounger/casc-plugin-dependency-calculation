@@ -1192,11 +1192,11 @@ case $ACTION in
         ;;
     getTestResultReport)
         processVars "${@}"
-        getChangedSources
+        getTestResultReport
         ;;
     applyBundleConfigMaps)
         processVars "${@}"
-        getChangedSources
+        applyBundleConfigMaps
         ;;
     runValidationsChangedOnly)
         processVars "${@}"
@@ -1204,7 +1204,7 @@ case $ACTION in
         ;;
     runValidations)
         processVars "${@}"
-        runValidationsChangedOnly
+        runValidations
         ;;
     *)
         unknownAction
