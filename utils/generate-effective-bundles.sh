@@ -75,9 +75,18 @@ setDirs() {
     KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
 }
 
-kustomizeCmdCheck() {
-    command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
+toolCheck() {
+    local tools="${1:-}"
+    for tool in $tools; do
+        command -v "${tool}" &> /dev/null || die "You need to install ${tool}"
+        if [ "$tool" == "yq" ]; then
+            local yqVersion=''
+            yqVersion=$(yq --version | cut -d' ' -f 3)
+            [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ'"
+        fi
+    done
 }
+
 # util function to test versions
 ver() {
     echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
@@ -101,7 +110,8 @@ DRY_RUN="${DRY_RUN:-1}"
 AUTO_UPDATE_CATALOG="${AUTO_UPDATE_CATALOG:-1}"
 DEBUG="${DEBUG:-0}"
 TREE_CMD=$(command -v tree || true)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+CASCGEN_TOOL="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "${CASCGEN_TOOL}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # CI_VERSION env var set, no detection necessary. Otherwise,
@@ -112,11 +122,17 @@ CI_DETECTION_PATTERN_DEFAULT="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
 CI_DETECTION_PATTERN="${CI_DETECTION_PATTERN:-"${CI_DETECTION_PATTERN_DEFAULT}"}"
 CI_TEST_PATTERN="([0-9]+\.[0-9]+\.[0-9]+\.[0-9])"
 
-# find the DEP_TOOL location (found as cascdeps in the docker image)
+# find the CASCDEPS_TOOL location (found as cascdeps in the docker image)
 if command -v cascdeps &> /dev/null; then
-    DEP_TOOL=$(command -v cascdeps)
-elif [ -z "${DEP_TOOL:-}" ]; then
-    DEP_TOOL="${PARENT_DIR}/run.sh"
+    CASCDEPS_TOOL=$(command -v cascdeps)
+elif [ -z "${CASCDEPS_TOOL:-}" ]; then
+    # find the cascdeps tool in the current directory or the parent directory
+    for f in "${SCRIPT_DIR}/cascdeps" "${SCRIPT_DIR}/run.sh" "${PARENT_DIR}/cascdeps" "${PARENT_DIR}/run.sh"; do
+        if [ -f "$f" ]; then
+            CASCDEPS_TOOL="$f"
+            break
+        fi
+    done
 fi
 
 determineCIVersion() {
@@ -196,13 +212,6 @@ checkForMacGnuBinaries() {
 prereqs() {
     [[ "${BASH_VERSION:0:1}" -lt 4 ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
     checkForMacGnuBinaries
-    for tool in yq md5sum; do
-        command -v $tool &> /dev/null || die "You need to install $tool"
-    done
-    # yq version
-    local yqCurrentVersion=''
-    yqCurrentVersion=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" <<< "$(yq --version)")
-    [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqCurrentVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ'"
 }
 
 processVars() {
@@ -229,19 +238,24 @@ processVars() {
 
     echo "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
-    [ -f "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not a file"
-    [ -x "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not executable"
+    [ -f "${CASCDEPS_TOOL}" ] || die "CASCDEPS_TOOL '${CASCDEPS_TOOL}' is not a file"
+    [ -x "${CASCDEPS_TOOL}" ] || die "CASCDEPS_TOOL '${CASCDEPS_TOOL}' is not executable"
     [ -d "${RAW_DIR}" ] || die "RAW_DIR '${RAW_DIR}' is not a directory"
     [ -d "${EFFECTIVE_DIR}" ] || die "EFFECTIVE_DIR '${EFFECTIVE_DIR}'  is not a directory"
     determineCIVersion
     echo "Running with:
-    DEP_TOOL=$DEP_TOOL
+    CASCGEN_TOOL=$CASCGEN_TOOL
+    CASCDEPS_TOOL=$CASCDEPS_TOOL
     TARGET_BASE_DIR=$TARGET_BASE_DIR
     CACHE_BASE_DIR=$CACHE_BASE_DIR
     RAW_DIR=$RAW_DIR
     EFFECTIVE_DIR=$EFFECTIVE_DIR
     BUNDLE_FILTER=$BUNDLE_FILTER
-    CI_VERSION=$CI_VERSION"
+    CI_VERSION=$CI_VERSION
+    GIT_COMMIT=${GIT_COMMIT:-}
+    GIT_PREVIOUS_SUCCESSFUL_COMMIT=${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}
+    GIT_BRANCH=${GIT_BRANCH:-}
+    CHANGE_TARGET=${CHANGE_TARGET:-}"
 }
 
 listFileXInY() {
@@ -276,6 +290,7 @@ findBundleChain() {
 
 generate() {
     local bundleFilter="${BUNDLE_FILTER:-}"
+    toolCheck yq md5sum
 
     # one off rename of bundle.yaml to raw.bundle.yaml (otherwise the OC complains about the duplicate bundles :-()
     if [ -f "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}/bundle.yaml" ]; then
@@ -407,11 +422,11 @@ replacePluginCatalog() {
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
-    local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
+    local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
     while IFS= read -r -d '' f; do
         PLUGINS_LIST_CMD+=("$f")
-        DEP_TOOL_CMD+=(-f "$f")
+        CASCDEPS_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$bundleDir")
 
     # do we even have plugins files?
@@ -425,9 +440,9 @@ replacePluginCatalog() {
 
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
         echo "Detected the PLUGIN_CATALOG_OFFLINE_URL_BASE variable. Using the offline catalog."
-        DEP_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
+        CASCDEPS_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
     else
-        DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+        CASCDEPS_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
     fi
     # this is a tricky one, but we want
     # - unique list of plugins from all files
@@ -457,7 +472,7 @@ replacePluginCatalog() {
         fi
     fi
     echo ""
-    echo "Running... ${DEP_TOOL_CMD[*]}"
+    echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
     if [ "$localDryRun" -eq 0 ]; then
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
@@ -474,7 +489,7 @@ replacePluginCatalog() {
         done
         PLUGIN_CATALOG_DISPLAY_NAME="${str:1}" # Remove leading space
         export PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE="${PLUGIN_CATALOG_DISPLAY_NAME} (offline)"
-        "${DEP_TOOL_CMD[@]}"
+        "${CASCDEPS_TOOL_CMD[@]}"
         unset PLUGIN_CATALOG_NAME PLUGIN_CATALOG_DISPLAY_NAME PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
@@ -532,6 +547,7 @@ sanityCheckMinimumPlugins() {
 ## create plugin commands
 plugins() {
     local bundleFilter="${BUNDLE_FILTER:-}"
+    toolCheck yq md5sum
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
@@ -545,10 +561,10 @@ plugins() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         while IFS= read -r -d '' f; do
-            local DEP_TOOL_CMD=("$DEP_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
-            echo "Running... ${DEP_TOOL_CMD[*]}"
+            local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
+            echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
             if [ "$DRY_RUN" -eq 0 ] || [ "$AUTO_UPDATE_CATALOG" -eq 1 ]; then
-                "${DEP_TOOL_CMD[@]}"
+                "${CASCDEPS_TOOL_CMD[@]}"
                 # if we run the 'force' command, we still only want to download the UC once per call
                 REFRESH_UC=0
             else
@@ -608,7 +624,7 @@ cleanupUnusedBundles() {
     fi
     echo "Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
     if [ -f "${KUSTOMIZATION_YAML}" ]; then
-        kustomizeCmdCheck
+        toolCheck kustomize
         echo -n > "${KUSTOMIZATION_YAML}"
         (cd "$EFFECTIVE_DIR" && {
             local bundles=''
@@ -939,7 +955,7 @@ getTestResultReport() {
 applyBundleConfigMaps()
 {
     local headSha='' configMaps=''
-    kustomizeCmdCheck
+    toolCheck kustomize
     headSha=$(git rev-parse HEAD)
     echo "Adding current git sha and CI_VERSION to the kustomize configuration..."
     [ -n "$headSha" ] || die "The current git sha is empty."
@@ -1077,6 +1093,18 @@ runPrecommit() {
 
 }
 
+copyScriptsToAnotherDirectory() {
+    local destDir="${1-}"
+    [ -d "$destDir" ] || die "Destination directory '$destDir' does not exist."
+    for scriptName in "$CASCDEPS_TOOL" "$CASCGEN_TOOL"; do
+        if [ -f "${scriptName}" ]; then
+            echo "Copying script '${scriptName}' to '${destDir}'"
+            cp "${scriptName}" "${destDir}"
+        fi
+    done
+}
+
+# This function is used to check if the current tag is the latest version
 checkForLatestVersion() {
     local currentTag="${1-}"
     currentTag="${currentTag//*:/}"
@@ -1154,6 +1182,9 @@ case $ACTION in
     createTestResources)
         processVars "${@}"
         createTestResources
+        ;;
+    copyScripts)
+        copyScriptsToAnotherDirectory "${@}"
         ;;
     getChangedSources)
         processVars "${@}"
