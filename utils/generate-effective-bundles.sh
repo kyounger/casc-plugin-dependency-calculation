@@ -82,7 +82,7 @@ toolCheck() {
         if [ "$tool" == "yq" ]; then
             local yqVersion=''
             yqVersion=$(yq --version | cut -d' ' -f 3)
-            [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ'"
+            [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ' (currently '$yqVersion')"
         fi
     done
 }
@@ -123,6 +123,7 @@ CI_DETECTION_PATTERN="${CI_DETECTION_PATTERN:-"${CI_DETECTION_PATTERN_DEFAULT}"}
 CI_TEST_PATTERN="([0-9]+\.[0-9]+\.[0-9]+\.[0-9])"
 
 # find the CASCDEPS_TOOL location (found as cascdeps in the docker image)
+export CASCDEPS_TOOL
 if command -v cascdeps &> /dev/null; then
     CASCDEPS_TOOL=$(command -v cascdeps)
 elif [ -z "${CASCDEPS_TOOL:-}" ]; then
