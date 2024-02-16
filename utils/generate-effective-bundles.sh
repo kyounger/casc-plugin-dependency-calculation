@@ -81,7 +81,7 @@ toolCheck() {
         command -v "${tool}" &> /dev/null || die "You need to install ${tool}"
         if [ "$tool" == "yq" ]; then
             local yqVersion=''
-            yqVersion=$(yq --version | cut -d' ' -f 3)
+            yqVersion=$(yq --version | grep -oE "([0-9]+\.[0-9]+\.[0-9]+)")
             [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ' (currently '$yqVersion')"
         fi
     done
