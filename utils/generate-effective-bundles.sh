@@ -38,6 +38,7 @@ setDirs() {
 
     VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
     VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
+    [ "${BUNDLE_SUB_DIR:-}" != '.' ] || BUNDLE_SUB_DIR=''
     if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
         # set the prefix to include the bundle sub dir
         VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
@@ -62,6 +63,9 @@ setDirs() {
     RAW_DIR="${WORKSPACE}/raw-bundles"
 
     TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
+    TEST_RESOURCES_CHANGED_FILES="${TEST_RESOURCES_DIR}/.changed-files"
+    TEST_RESOURCES_CHANGED_BUNDLES="${TEST_RESOURCES_DIR}/.changed-effective-bundles"
+
     VALIDATIONS_TEMPLATE="${VALIDATIONS_TEMPLATE:-template}"
     CHECKSUM_PLUGIN_FILES_KEY='CHECKSUM_PLUGIN_FILES'
     export TARGET_BASE_DIR="${TARGET_BASE_DIR:-"${GIT_ROOT}/target"}"
@@ -69,9 +73,18 @@ setDirs() {
 
     # optional kustomization.yaml creation
     KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
-    if [ -f "${KUSTOMIZATION_YAML}" ]; then
-        command -v kustomize &> /dev/null || die "Do need to install kustomize for this to work? Or remove the '${KUSTOMIZATION_YAML}'"
-    fi
+}
+
+toolCheck() {
+    local tools="${1:-}"
+    for tool in $tools; do
+        command -v "${tool}" &> /dev/null || die "You need to install ${tool}"
+        if [ "$tool" == "yq" ]; then
+            local yqVersion=''
+            yqVersion=$(yq --version | grep -oE "([0-9]+\.[0-9]+\.[0-9]+)")
+            [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ' (currently '$yqVersion')"
+        fi
+    done
 }
 
 # util function to test versions
@@ -97,7 +110,8 @@ DRY_RUN="${DRY_RUN:-1}"
 AUTO_UPDATE_CATALOG="${AUTO_UPDATE_CATALOG:-1}"
 DEBUG="${DEBUG:-0}"
 TREE_CMD=$(command -v tree || true)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null && pwd)"
+CASCGEN_TOOL="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "${CASCGEN_TOOL}")" >/dev/null && pwd)"
 PARENT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # CI_VERSION env var set, no detection necessary. Otherwise,
@@ -108,11 +122,18 @@ CI_DETECTION_PATTERN_DEFAULT="v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
 CI_DETECTION_PATTERN="${CI_DETECTION_PATTERN:-"${CI_DETECTION_PATTERN_DEFAULT}"}"
 CI_TEST_PATTERN="([0-9]+\.[0-9]+\.[0-9]+\.[0-9])"
 
-# find the DEP_TOOL location (found as cascdeps in the docker image)
+# find the CASCDEPS_TOOL location (found as cascdeps in the docker image)
+export CASCDEPS_TOOL
 if command -v cascdeps &> /dev/null; then
-    DEP_TOOL=$(command -v cascdeps)
-elif [ -z "${DEP_TOOL:-}" ]; then
-    DEP_TOOL="${PARENT_DIR}/run.sh"
+    CASCDEPS_TOOL=$(command -v cascdeps)
+elif [ -z "${CASCDEPS_TOOL:-}" ]; then
+    # find the cascdeps tool in the current directory or the parent directory
+    for f in "${SCRIPT_DIR}/cascdeps" "${SCRIPT_DIR}/run.sh" "${PARENT_DIR}/cascdeps" "${PARENT_DIR}/run.sh"; do
+        if [ -f "$f" ]; then
+            CASCDEPS_TOOL="$f"
+            break
+        fi
+    done
 fi
 
 determineCIVersion() {
@@ -192,13 +213,6 @@ checkForMacGnuBinaries() {
 prereqs() {
     [[ "${BASH_VERSION:0:1}" -lt 4 ]] && die "Bash 3.x is not supported. Please use Bash 4.x or higher."
     checkForMacGnuBinaries
-    for tool in yq md5sum; do
-        command -v $tool &> /dev/null || die "You need to install $tool"
-    done
-    # yq version
-    local yqCurrentVersion=''
-    yqCurrentVersion=$(grep -oE "[0-9]+\.[0-9]+\.[0-9]+" <<< "$(yq --version)")
-    [ "$(ver "${MIN_VER_YQ}")" -lt "$(ver "$yqCurrentVersion")" ] || die "Please upgrade yq to at least '$MIN_VER_YQ'"
 }
 
 processVars() {
@@ -225,19 +239,24 @@ processVars() {
 
     echo "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
-    [ -f "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not a file"
-    [ -x "${DEP_TOOL}" ] || die "DEP_TOOL '${DEP_TOOL}' is not executable"
+    [ -f "${CASCDEPS_TOOL}" ] || die "CASCDEPS_TOOL '${CASCDEPS_TOOL}' is not a file"
+    [ -x "${CASCDEPS_TOOL}" ] || die "CASCDEPS_TOOL '${CASCDEPS_TOOL}' is not executable"
     [ -d "${RAW_DIR}" ] || die "RAW_DIR '${RAW_DIR}' is not a directory"
     [ -d "${EFFECTIVE_DIR}" ] || die "EFFECTIVE_DIR '${EFFECTIVE_DIR}'  is not a directory"
     determineCIVersion
     echo "Running with:
-    DEP_TOOL=$DEP_TOOL
+    CASCGEN_TOOL=$CASCGEN_TOOL
+    CASCDEPS_TOOL=$CASCDEPS_TOOL
     TARGET_BASE_DIR=$TARGET_BASE_DIR
     CACHE_BASE_DIR=$CACHE_BASE_DIR
     RAW_DIR=$RAW_DIR
     EFFECTIVE_DIR=$EFFECTIVE_DIR
     BUNDLE_FILTER=$BUNDLE_FILTER
-    CI_VERSION=$CI_VERSION"
+    CI_VERSION=$CI_VERSION
+    GIT_COMMIT=${GIT_COMMIT:-}
+    GIT_PREVIOUS_SUCCESSFUL_COMMIT=${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}
+    GIT_BRANCH=${GIT_BRANCH:-}
+    CHANGE_TARGET=${CHANGE_TARGET:-}"
 }
 
 listFileXInY() {
@@ -272,6 +291,7 @@ findBundleChain() {
 
 generate() {
     local bundleFilter="${BUNDLE_FILTER:-}"
+    toolCheck yq md5sum
 
     # one off rename of bundle.yaml to raw.bundle.yaml (otherwise the OC complains about the duplicate bundles :-()
     if [ -f "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}/bundle.yaml" ]; then
@@ -403,11 +423,11 @@ replacePluginCatalog() {
     [ -d "${bundleDir:-}" ] || die "Please set bundleDir (i.e. raw-bundles/<BUNDLE_NAME>)"
     local pluginCatalogYamlFile="catalog.plugin-catalog.yaml"
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
-    local DEP_TOOL_CMD=("$DEP_TOOL" -N -M -v "$ciVersion")
+    local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
     while IFS= read -r -d '' f; do
         PLUGINS_LIST_CMD+=("$f")
-        DEP_TOOL_CMD+=(-f "$f")
+        CASCDEPS_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$bundleDir")
 
     # do we even have plugins files?
@@ -421,9 +441,9 @@ replacePluginCatalog() {
 
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
         echo "Detected the PLUGIN_CATALOG_OFFLINE_URL_BASE variable. Using the offline catalog."
-        DEP_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
+        CASCDEPS_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
     else
-        DEP_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
+        CASCDEPS_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
     fi
     # this is a tricky one, but we want
     # - unique list of plugins from all files
@@ -453,7 +473,7 @@ replacePluginCatalog() {
         fi
     fi
     echo ""
-    echo "Running... ${DEP_TOOL_CMD[*]}"
+    echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
     if [ "$localDryRun" -eq 0 ]; then
         echo "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
@@ -470,7 +490,7 @@ replacePluginCatalog() {
         done
         PLUGIN_CATALOG_DISPLAY_NAME="${str:1}" # Remove leading space
         export PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE="${PLUGIN_CATALOG_DISPLAY_NAME} (offline)"
-        "${DEP_TOOL_CMD[@]}"
+        "${CASCDEPS_TOOL_CMD[@]}"
         unset PLUGIN_CATALOG_NAME PLUGIN_CATALOG_DISPLAY_NAME PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE
     else
         echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
@@ -528,6 +548,7 @@ sanityCheckMinimumPlugins() {
 ## create plugin commands
 plugins() {
     local bundleFilter="${BUNDLE_FILTER:-}"
+    toolCheck yq md5sum
     while IFS= read -r -d '' bundleYaml; do
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
@@ -541,10 +562,10 @@ plugins() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         while IFS= read -r -d '' f; do
-            local DEP_TOOL_CMD=("$DEP_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
-            echo "Running... ${DEP_TOOL_CMD[*]}"
+            local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
+            echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
             if [ "$DRY_RUN" -eq 0 ] || [ "$AUTO_UPDATE_CATALOG" -eq 1 ]; then
-                "${DEP_TOOL_CMD[@]}"
+                "${CASCDEPS_TOOL_CMD[@]}"
                 # if we run the 'force' command, we still only want to download the UC once per call
                 REFRESH_UC=0
             else
@@ -604,6 +625,7 @@ cleanupUnusedBundles() {
     fi
     echo "Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
     if [ -f "${KUSTOMIZATION_YAML}" ]; then
+        toolCheck kustomize
         echo -n > "${KUSTOMIZATION_YAML}"
         (cd "$EFFECTIVE_DIR" && {
             local bundles=''
@@ -655,8 +677,318 @@ testForEffectivePlugin() {
 # TEST UTILS - FOR USE IN CI PIPELINES
 # TEST UTILS - FOR USE IN CI PIPELINES
 
+# Options which can be set as environment variables or place in the .env file
+# The summary title can be set to be an html header
+SUMMARY_HTML="${SUMMARY_HTML:-"false"}"
+# Whether to actually apply the config maps or just do a dry run
+CONFIGMAP_APPLY_DRY_RUN="${CONFIGMAP_APPLY_DRY_RUN:-"false"}"
+# Whether to actually delete unknown config maps or just add a warning to the log
+DELETE_UNKNOWN_BUNDLES="${DELETE_UNKNOWN_BUNDLES:-"true"}"
+# Give it 4 mins to connect to the jenkins server
+CONNECT_MAX_WAIT="${CONNECT_MAX_WAIT:-240}"
+# Used to allow for additional java opts to be added to the jenkins startup. e.g. -Djenkins.security.SystemReadPermission=true
+TEST_UTILS_STARTUP_JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS:-}"
+
+SUMMARY_TITLE="Analysis Summary:"
+[ -z "${BUNDLE_SUB_DIR:-}" ] || SUMMARY_TITLE="Analysis Summary for ${BUNDLE_SUB_DIR}:" # add sub dir to summary title
+
+# Set dry run for kubectl
+KUBERNETES_DRY_RUN=()
+if [ "true" == "${CONFIGMAP_APPLY_DRY_RUN:-}" ]; then
+    KUBERNETES_DRY_RUN=('--dry-run=client')
+fi
+
+# Test jenkins server variables
+JENKINS_LOG_TMP_FILE="/tmp/jenkins-process.log"
+TOKEN_SCRIPT="\
+import hudson.model.User
+import jenkins.security.ApiTokenProperty
+def jenkinsTokenName = 'token-for-test'
+def user = User.get('admin', false)
+def apiTokenProperty = user.getProperty(ApiTokenProperty.class)
+apiTokenProperty.tokenStore.getTokenListSortedByName().findAll {it.name==jenkinsTokenName}.each {
+    apiTokenProperty.tokenStore.revokeToken(it.getUuid())
+}
+def result = apiTokenProperty.tokenStore.generateNewToken(jenkinsTokenName).plainValue
+user.save()
+new File('/var/jenkins_home/secrets/initialAdminToken').text = result
+"
+
+## Takes 1 arg (validation) - starts a server with that particular validation bundle
+startServer()
+{
+    local validationBundle=$1
+    # Account for the case where the license is base64 encoded
+    if [ -n "${CASC_VALIDATION_LICENSE_KEY_B64:-}" ]; then
+        echo "Decoding the license key and cert..."
+        export CASC_VALIDATION_LICENSE_KEY=''
+        export CASC_VALIDATION_LICENSE_CERT=''
+        CASC_VALIDATION_LICENSE_KEY=$(echo "${CASC_VALIDATION_LICENSE_KEY_B64}" | base64 -d)
+        CASC_VALIDATION_LICENSE_CERT=$(echo "${CASC_VALIDATION_LICENSE_CERT_B64}" | base64 -d)
+    fi
+    echo "${TOKEN_SCRIPT}" > /usr/share/jenkins/ref/init.groovy.d/init_02_admin_token.groovy
+    export JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS} -Dcore.casc.config.bundle=${VALIDATIONS_DIR}/${validationBundle}"
+    echo "Cleaning plugins directory..."
+    rm -rf /var/jenkins_home/plugins /var/jenkins_home/envelope-extension-plugins
+    echo "Starting server with bundle '$validationBundle'"
+    if [ -f /usr/local/bin/launch.sh ]; then
+        nohup /usr/local/bin/launch.sh &> "${JENKINS_LOG_TMP_FILE}" &
+    elif [ -f /usr/local/bin/jenkins.sh ]; then
+        nohup /usr/local/bin/jenkins.sh &> "${JENKINS_LOG_TMP_FILE}" &
+    else
+        die "Neither launch.sh nor jenkins.sh exist."
+    fi
+    SERVER_PID=$!
+    echo "Started server with pid $SERVER_PID"
+    echo "$SERVER_PID" > "/tmp/jenkins-pid.${SERVER_PID}"
+    local serverStarted=''
+    ENDTIME=$(( $(date +%s) + CONNECT_MAX_WAIT )) # Calculate end time.
+    while [ "$(date +%s)" -lt $ENDTIME ]; do
+        echo "$(date): $(date +%s) -lt $ENDTIME"
+        if [[ "200" == $(curl -o /dev/null -sw "%{http_code}" "http://localhost:8080/whoAmI/api/json") ]]; then
+            serverStarted='y'
+            sleep 5 # just a little respite
+            echo "Server started" && break
+        else
+            sleep 5
+            echo "Waiting for server to start"
+        fi
+    done
+    if [ -z "$serverStarted" ]; then
+        echo "$(date): $(date +%s) -lt $ENDTIME"
+        echo "ERROR: Server not started in time. Printing the jenkins log...."
+        cat "${JENKINS_LOG_TMP_FILE}"
+        stopServer
+        exit 1
+    fi
+}
+
+## Takes 1 arg (bundleZipLocation) - validates bundle and places result in the "${bundleZipLocation}.json"
+runCurlValidation() {
+    local zipLocation="$1"
+    local jsonLocation="${zipLocation//zip/json}"
+    local summaryLocation="${zipLocation//zip/txt}" # placeholder to put the summary afterwards
+    local curlExitCode=''
+
+    touch "$summaryLocation"
+    echo "Running validation with '$zipLocation', writing to '$jsonLocation"
+    set +e
+    curl -sL -X POST -u "admin:$(cat /var/jenkins_home/secrets/initialAdminToken)" \
+        "http://localhost:8080/casc-bundle-mgnt/casc-bundle-validate" \
+        --header "Content-type: application/zip" \
+        --data-binary "@${zipLocation}" \
+        > "${jsonLocation}"
+    set -e
+    curlExitCode=$?
+    # sanity check
+    [ "${curlExitCode}" -eq 0 ] || die "Curl command failed with exit code ${curlExitCode}. See logs above."
+    echo "Curl command successful. Printing resulting json '${jsonLocation}'."
+    cat "${jsonLocation}"
+    grep -qE "^[ ]*\{.*" "${jsonLocation}" || die "ERROR: File does not start with '{' '${jsonLocation}'"
+}
+
+## Takes 0 args - uses SERVER_PID file from startServer to stop the server
+stopServer()
+{
+    echo "Stopping server/s if necessary..."
+    for pidFile in /tmp/jenkins-pid*; do
+        [ -f "$pidFile" ] || break # nothing found
+        local pid=''
+        pid=$(cat "${pidFile}")
+        local logFile="${JENKINS_LOG_TMP_FILE}.${pid}"
+        if [ -f "$JENKINS_LOG_TMP_FILE" ]; then
+            echo "Copying jenkins log file with pid to '$logFile'"
+            cp "$JENKINS_LOG_TMP_FILE" "$logFile"
+        else
+            echo "No log file found at '$JENKINS_LOG_TMP_FILE'"
+        fi
+        echo "Stopping server with pid '$pid'"
+        kill "$pid" || true
+    done
+    rm -f "/tmp/jenkins-pid."*
+}
+
+## Finds changes between the branch and the target and runs validations for those bundles
+runValidationsChangedOnly()
+{
+    local bundles=''
+    getChangedSources
+    if [ -f "${TEST_RESOURCES_CHANGED_BUNDLES}" ]; then
+        bundles=$(cat "${TEST_RESOURCES_CHANGED_BUNDLES}")
+    fi
+    if [ -n "$bundles" ]; then
+        echo "Changed effective bundles detected '$bundles'. Running validations..."
+        runValidations "$bundles"
+    else
+        echo "No changed effective bundles detected. Not doing anything..."
+    fi
+}
+
+## Takes 1 optional args (bundles) - if set run only those, otherwise run all validations (assumes the 'test-resources' directory has been created by the 'cascgen testResources')
+runValidations()
+{
+    local bundles="${1:-}"
+    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/"*; do
+        local validationBundle='' bundlesFound=''
+        validationBundle=$(basename "$validationBundleTestResource")
+        for b in $bundles; do
+            local bZip="${validationBundleTestResource}/${b}.zip"
+            [ ! -f "${bZip}" ] || bundlesFound="${bundlesFound} ${bZip}"
+        done
+        if [ -z "${bundles}" ] || [ -n "$bundlesFound" ]; then
+            echo "Analysing validation bundle '${validationBundle}'..."
+            startServer "$validationBundle"
+            if [ -n "$bundlesFound" ]; then
+                for bundleZipPath in $bundlesFound; do
+                    runCurlValidation "${bundleZipPath}"
+                done
+            else
+                for bundleZipPath in "${validationBundleTestResource}/"*.zip; do
+                    runCurlValidation "${bundleZipPath}"
+                done
+            fi
+            stopServer
+            sleep 2
+        else
+            echo "Skipping validation bundle '${validationBundle}' since no matching bundles found."
+        fi
+    done
+}
+
+changedSourcesAction() {
+    local fromSha=$1 toSha=$2 headSha=$3
+    echo "CHANGED RESOURCES - Looking for changes between branch and base..."
+    if ! git diff --exit-code --name-only "${fromSha}..${toSha}"; then
+        echo "CHANGED RESOURCES - Found the changed resources above."
+        git diff --name-only "${fromSha}..${toSha}" > "${TEST_RESOURCES_CHANGED_FILES}"
+    fi
+    if grep -oE "effective-bundles/.*/" "${TEST_RESOURCES_CHANGED_FILES}"; then
+        grep -oE "effective-bundles/.*/" "${TEST_RESOURCES_CHANGED_FILES}" | cut -d/ -f2 | sort -u | xargs > "${TEST_RESOURCES_CHANGED_BUNDLES}"
+    fi
+    echo "CHANGED RESOURCES - Found the following changed bundles:"
+    cat "${TEST_RESOURCES_CHANGED_BUNDLES}"
+    echo "CHANGED RESOURCES - Checking to ensure branch is up to date..."
+    if [[ "$headSha" != "$toSha" ]]; then
+        die "PR requires merge commit. Please rebase or otherwise update your branch. Not accepting."
+    fi
+}
+
+## Adds metadata above test-resources
+## Assumes the 'test-resources' directory has been created by the 'cascgen testResources'
+## - .changed-files: all the from the PR
+## - .changed-effective-bundles: space spearated list of changed bundles from the PR
+getChangedSources() {
+    local fromSha='' toSha='' headSha=''
+    headSha=$(git rev-parse HEAD)
+    # we are on a PR
+    if [ -n "${CHANGE_TARGET:-}" ] && [ -n "${BRANCH_NAME:-}" ]; then
+        fromSha=$(git rev-parse "origin/${CHANGE_TARGET}")
+        toSha=$(git rev-parse "origin/${BRANCH_NAME}")
+        changedSourcesAction "$fromSha" "$toSha" "$headSha"
+    # we are on a release branch
+    elif [ -n "${GIT_COMMIT:-}" ]; then
+        if [ -n "${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}" ]; then
+            changedSourcesAction "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" "$GIT_COMMIT" "$headSha"
+        else
+            echo "Adding all bundles to the changed list since we are on a release branch for the first time."
+            find "$EFFECTIVE_DIR" -mindepth 1 -maxdepth 1 -type d | cut -d/ -f 3 | sort -u | xargs > "${TEST_RESOURCES_CHANGED_BUNDLES}"
+        fi
+    else
+        die "We need CHANGE_TARGET and BRANCH_NAME, or a GIT_COMMIT and optionally GIT_PREVIOUS_SUCCESSFUL_COMMIT."
+    fi
+}
+
+## Prints a summary (assumes createTestResources has been run, and that some validation results in the form of <bundeName>.json next to <bundeName>.zip)
+getTestResultReport() {
+    local bundleDir=''
+    local bundleName=''
+    local bundleStatus=''
+    local bundleJson=''
+    local bundleTxt='' # marker file to say we expect a resulting json
+    local problemFound=''
+    local msg=''
+    if [ "true" == "${SUMMARY_HTML}" ]; then
+        msg=$(printf "<b>%s</b>" "${SUMMARY_TITLE}")
+        SUMMARY_EOL="<br>"
+    else
+        msg=$(printf "%s" "${SUMMARY_TITLE}")
+        SUMMARY_EOL="\n"
+    fi
+
+    echo "$msg: starting analysis. If you see this, there was a problem during the analysis." > "${TEST_RESOURCES_DIR}/test-summary.txt"
+    echo "Analysing bundles..."
+    while IFS= read -r -d '' bundleDir; do
+        bundleName=$(basename "$bundleDir")
+        echo "Looking at bundle: ${bundleName}"
+        bundleTxt=$(find "${TEST_RESOURCES_DIR}" -type f -name "${bundleName}.txt")
+        if [ -f "${bundleTxt}" ]; then
+            # result json expected at least
+            bundleJson=$(find "${TEST_RESOURCES_DIR}" -type f -name "${bundleName}.json")
+            if [ -f "${bundleJson}" ]; then
+                jq . "${bundleJson}"
+                if [[ "true" == $(jq '.valid' "${bundleJson}") ]]; then
+                    bundleStatus='OK  - VALID WITHOUT WARNINGS'
+                    if jq -r '."validation-messages"[]' "${bundleJson}" | grep -qvE "^INFO"; then
+                        bundleStatus='NOK - CONTAINS NON-INFO MESSAGES'
+                    fi
+                else
+                    bundleStatus='NOK - INVALID'
+                fi
+            else
+                bundleStatus='NOK - VALIDATION JSON EXPECTED BUT MISSING'
+            fi
+        else
+            bundleStatus='N/A  - NOT TESTED IN THIS PR'
+        fi
+        if [[ "${bundleStatus}" =~ NOK ]]; then
+            problemFound='y'
+        fi
+        msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "$bundleName" "$bundleStatus")
+        echo "$msg"
+    done < <(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+    echo
+    echo "$msg"
+    printf "%s${SUMMARY_EOL}${SUMMARY_EOL}" "${msg}" > "${TEST_RESOURCES_DIR}/test-summary.txt"
+    [ -z "$problemFound" ] || die "Problems found. Dying, alas 'twas so nice..."
+}
+
+## Uses kubectl and kustomize to add two labels (CI_VERSION and CURRENT_GIT_SHA) and  apply the bundle config maps. Assumes env vars NAMESPACE and DELETE_UNKNOWN_BUNDLES (Removes any bundles which are no longer in the list for this release)
+applyBundleConfigMaps()
+{
+    local headSha='' configMaps=''
+    toolCheck kustomize
+    headSha=$(git rev-parse HEAD)
+    echo "Adding current git sha and CI_VERSION to the kustomize configuration..."
+    [ -n "$headSha" ] || die "The current git sha is empty."
+    [ -n "$CI_VERSION" ] || die "The env CI_VERSION is empty."
+    cd "${EFFECTIVE_DIR}"
+    local labelVersion='' labelSha='' labelSubDir=''
+    labelVersion="bundle-mgr/version:$CI_VERSION"
+    labelSha="bundle-mgr/sha:$headSha"
+    labelSubDir="bundle-mgr/subdir:${BUNDLE_SUB_DIR:-"root"}"
+    kustomize edit set label "$labelVersion" "$labelSha" "$labelSubDir"
+    echo "Applying the kustomize configuration..."
+    kubectl kustomize | kubectl -n "$NAMESPACE" apply -f - "${KUBERNETES_DRY_RUN[@]}"
+    configMaps=$(kubectl -n "$NAMESPACE" get cm --selector "${labelVersion//\:/=},${labelSubDir//\:/=}" -o jsonpath="{.items[*].metadata.name}")
+    for cm in $configMaps; do
+        if grep -qE "name: ${cm}$" kustomization.yaml; then
+            echo "ConfigMap '$cm' in current list."
+        else
+            echo "ConfigMap '$cm' NOT in current list."
+            if [ "true" == "${DELETE_UNKNOWN_BUNDLES}" ]; then
+                echo "ConfigMap '$cm' will be deleted."
+                kubectl -n "$NAMESPACE" delete cm "$cm" "${KUBERNETES_DRY_RUN[@]}"
+            else
+                echo "ConfigMap '$cm' unknown but will be ignored (set DELETE_UNKNOWN_BUNDLES to true to delete)."
+            fi
+        fi
+    done
+    cd - &>/dev/null
+}
+
 createTestResources() {
     mkdir -p "${TEST_RESOURCES_DIR}"
+    touch "${TEST_RESOURCES_CHANGED_FILES}" "${TEST_RESOURCES_CHANGED_BUNDLES}"
     for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
         for bundle in $(yq '. | head_comment' "${d}/plugins.yaml"); do
             local testValidationDir=''
@@ -759,9 +1091,22 @@ runPrecommit() {
     else
         echo "No error messages"
     fi
-
 }
 
+copyScriptsToAnotherDirectory() {
+    local destDir="${1-}"
+    if [ ! -d "$destDir" ]; then
+        mkdir -p "${destDir}" || die "Destination directory '$destDir' does not exist and cound not create."
+    fi
+    for scriptName in "$CASCDEPS_TOOL" "$CASCGEN_TOOL"; do
+        if [ -f "${scriptName}" ]; then
+            echo "Copying script '${scriptName}' to '${destDir}'"
+            cp "${scriptName}" "${destDir}"
+        fi
+    done
+}
+
+# This function is used to check if the current tag is the latest version
 checkForLatestVersion() {
     local currentTag="${1-}"
     currentTag="${currentTag//*:/}"
@@ -775,9 +1120,36 @@ checkForLatestVersion() {
     fi
 }
 
+unknownAction() {
+        die "Unknown action '$ACTION' (permitted actions below)
+
+    # management
+    - plugins: used to create the minimal set of plugins for your bundles
+    - generate: used to create the effective bundles
+    - all: running both plugins and then generate
+    - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
+    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
+
+    # test utils
+    - vars: used to print out the current environment variables for a given (used to test BUNDLE_FILTER etc.)
+    - versionCheck: used to check if given tag is the latest version
+
+    # CI utils - for use in the Jenkinsfile (assumes some environment variables are set)
+    - createTestResources: can be used in pipelines when validating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
+    - getChangedSources: can be used in pipelines when to get changed sources in PR or release branches
+    - getTestResultReport: can be used in pipelines to get a summary of the test results
+    - runValidations: can be used in pipelines to run validations for all bundles
+    - runValidationsChangedOnly: can be used in pipelines to run validations for changed bundles only
+    - applyBundleConfigMaps: can be used in pipelines to apply the bundle config maps
+
+    NOTE: If your bundles are separated into groups through sub-directories, see the section on filtering and the BUNDLE_SUB_DIR environment variables in the repository.
+"
+}
+
 # main
 ACTION="${1:-}"
-shift
+
+shift || true
 debug "Looking for action '$ACTION'"
 case $ACTION in
     versionCheck)
@@ -809,71 +1181,35 @@ case $ACTION in
     vars)
         processVars "${@}"
         ;;
-    createTestResources) # can be used in pipelines when vaildating bundles
+    createTestResources)
         processVars "${@}"
         createTestResources
         ;;
+    copyScripts)
+        copyScriptsToAnotherDirectory "${@}"
+        ;;
+    getChangedSources)
+        processVars "${@}"
+        getChangedSources
+        ;;
+    getTestResultReport)
+        processVars "${@}"
+        getTestResultReport
+        ;;
+    applyBundleConfigMaps)
+        processVars "${@}"
+        applyBundleConfigMaps
+        ;;
+    runValidationsChangedOnly)
+        processVars "${@}"
+        runValidationsChangedOnly
+        ;;
+    runValidations)
+        processVars "${@}"
+        runValidations
+        ;;
     *)
-        die "Unknown action '$ACTION' (actions are: pre-commit, generate, plugins, all, force)
-    - plugins: used to create the minimal set of plugins for your bundles
-    - generate: used to create the effective bundles
-    - all: running both plugins and then generate
-    - force: running both plugins and then generate, but taking a fresh update center json (normally cached for 6 hours, and regenerating the plugin catalog regardless)
-    - pre-commit: can be used in combination with https://pre-commit.com/ to avoid unwanted mistakes in commits
-    - createTestResources: can be used in pipelines when validating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
-
-    NOTE: If your bundles are separated into groups through sub-directories, use the BUNDLE_SUB_DIR environment variable to specify the sub-directory."
+        unknownAction
         ;;
 esac
 debug "Done"
-
-# Example: unique plugins
-#
-# 1. WE TAKE THE PLUGINS FROM ALL FILES
-#
-# ❯ yq --no-doc '.plugins' plugins.0.base.plugins.plugins.yaml plugins.1.bundle-a.plugins.plugins.yaml plugins.2.controller-c.plugins.plugins.yaml
-# # base comment
-# - id: beer # 3rd src
-# - id: cloudbees-casc-client # cap src
-# - id: cloudbees-casc-items-controller # cap src
-# - id: cloudbees-prometheus # 3rd src
-# - id: configuration-as-code # cap src
-# - id: github # cap src
-# - id: infradna-backup # cap src
-# - id: managed-master-hibernation # cap src
-# - id: pipeline-model-definition # cap src
-# - id: pipeline-stage-view # cap src
-# - id: sshd # cap src
-
-# # bundle-a comment
-# - id: beer # 3rd src
-# - id: branch-api # cap dep
-# - id: job-dsl # 3rd src
-
-# # controller-c comment
-# - id: beer # 3rd src
-# - id: git # cap dep
-# - id: jfrog # 3rd src
-# - id: pipeline-model-definition # cap dep
-#
-# 2. WE PIPE INTO REVERSE, UNIQUE_BY_ID, SORT_BY_ID (the controller-c comment is preserved)
-#
-# .... | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false
-#
-# # controller-c comment
-# - id: beer # 3rd src
-# - id: branch-api # cap dep
-# - id: cloudbees-casc-client # cap src
-# - id: cloudbees-casc-items-controller # cap src
-# - id: cloudbees-prometheus # 3rd src
-# - id: configuration-as-code # cap src
-# - id: git # cap dep
-# - id: github # cap src
-# - id: infradna-backup # cap src
-# - id: jfrog # 3rd src
-# - id: job-dsl # 3rd src
-# - id: managed-master-hibernation # cap src
-# - id: pipeline-model-definition # cap dep
-# - id: pipeline-stage-view # cap src
-# - id: sshd # cap src
-
