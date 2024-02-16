@@ -692,9 +692,6 @@ CONNECT_MAX_WAIT="${CONNECT_MAX_WAIT:-240}"
 # Used to allow for additional java opts to be added to the jenkins startup. e.g. -Djenkins.security.SystemReadPermission=true
 TEST_UTILS_STARTUP_JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS:-}"
 
-SUMMARY_TITLE="Analysis Summary:"
-[ -z "${BUNDLE_SUB_DIR:-}" ] || SUMMARY_TITLE="Analysis Summary for ${BUNDLE_SUB_DIR}:" # add sub dir to summary title
-
 # Set dry run for kubectl
 KUBERNETES_DRY_RUN=()
 if [ "true" == "${CONFIGMAP_APPLY_DRY_RUN:-}" ]; then
@@ -917,6 +914,10 @@ getTestResultReport() {
     local bundleTxt='' # marker file to say we expect a resulting json
     local problemFound=''
     local msg=''
+
+    SUMMARY_TITLE="Analysis Summary:"
+    [ -z "${BUNDLE_SUB_DIR:-}" ] || SUMMARY_TITLE="Analysis Summary for ${BUNDLE_SUB_DIR}:" # add sub dir to summary title
+
     if [ "true" == "${SUMMARY_HTML}" ]; then
         msg=$(printf "<b>%s</b>" "${SUMMARY_TITLE}")
         SUMMARY_EOL="<br>"
@@ -948,7 +949,7 @@ getTestResultReport() {
                 bundleStatus='NOK - VALIDATION JSON EXPECTED BUT MISSING'
             fi
         else
-            bundleStatus='N/A  - NOT TESTED IN THIS PR'
+            bundleStatus='N/A  - NOT TESTED'
         fi
         if [[ "${bundleStatus}" =~ NOK ]]; then
             problemFound='y'
