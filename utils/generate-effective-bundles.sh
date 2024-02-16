@@ -1091,12 +1091,13 @@ runPrecommit() {
     else
         echo "No error messages"
     fi
-
 }
 
 copyScriptsToAnotherDirectory() {
     local destDir="${1-}"
-    [ -d "$destDir" ] || die "Destination directory '$destDir' does not exist."
+    if [ ! -d "$destDir" ]; then
+        mkdir -p "${destDir}" || die "Destination directory '$destDir' does not exist and cound not create."
+    fi
     for scriptName in "$CASCDEPS_TOOL" "$CASCGEN_TOOL"; do
         if [ -f "${scriptName}" ]; then
             echo "Copying script '${scriptName}' to '${destDir}'"
