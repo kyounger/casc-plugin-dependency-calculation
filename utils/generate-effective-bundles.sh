@@ -107,9 +107,9 @@ ver() {
     echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
 }
 
-die() { echo "$*"; exit 1; }
+die() { echo "$*"  >&2; exit 1; }
 
-debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
+debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*" >&2; fi; }
 
 # minimal tool versions
 MIN_VER_YQ="4.35.2"
@@ -1356,4 +1356,3 @@ case $ACTION in
         unknownAction
         ;;
 esac
-debug "Done"
