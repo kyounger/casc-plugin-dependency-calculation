@@ -1181,7 +1181,7 @@ getValidationDirs() {
     if [ -z "${bundleSubDirToCheck}" ]; then
         for d in ${validationDirs}; do find "${d}" -mindepth 1 -maxdepth 1 -type d -name "${VALIDATIONS_BUNDLE_PREFIX_ORIG}*"; done
     elif [ "." == "${bundleSubDirToCheck}" ]; then
-        validationDirs=$(grep -E "^${GIT_ROOT}/validation-bundles/" <<< "${validationDirs}") || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
+        validationDirs=$(grep -E "^${GIT_ROOT}/validation-bundles" <<< "${validationDirs}") || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
         for d in ${validationDirs}; do find "${d}" -mindepth 1 -maxdepth 1 -type d -name "${VALIDATIONS_BUNDLE_PREFIX_ORIG}*"; done
     else
         validationDirs=$(grep -E "^${GIT_ROOT}/${bundleSubDirToCheck}/validation-bundles" <<< "${validationDirs}") || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
