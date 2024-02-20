@@ -25,6 +25,27 @@ loadDotenv() {
 }
 
 setDirs() {
+    local bundleFilter="${1:-}"
+    BUNDLE_FILTER=''
+    if [ -n "${bundleFilter}" ]; then
+        if [[ "$bundleFilter" =~ ^raw-bundles\/.* ]]; then
+            BUNDLE_FILTER="${bundleFilter#raw-bundles/}"
+            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
+            debug "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
+        elif [[ "$bundleFilter" =~ .*\/raw-bundles\/.* ]]; then
+            BUNDLE_SUB_DIR="${bundleFilter//\/raw-bundles*/}"
+            BUNDLE_FILTER="${bundleFilter#*raw-bundles/}"
+            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
+            debug "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
+            debug "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
+        elif [ -d "${bundleFilter}/raw-bundles" ]; then
+            BUNDLE_SUB_DIR="${bundleFilter}"
+            debug "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
+        else
+            BUNDLE_FILTER="${bundleFilter}"
+        fi
+    fi
+
     loadDotenv
     VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
     # set the bundle sub dir detected from the current workspace
@@ -226,27 +247,7 @@ prereqs() {
 }
 
 processVars() {
-    local bundleFilter="${1:-}"
-    BUNDLE_FILTER=''
-    if [ -n "${bundleFilter}" ]; then
-        if [[ "$bundleFilter" =~ ^raw-bundles\/.* ]]; then
-            BUNDLE_FILTER="${bundleFilter#raw-bundles/}"
-            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
-            debug "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
-        elif [[ "$bundleFilter" =~ .*\/raw-bundles\/.* ]]; then
-            BUNDLE_SUB_DIR="${bundleFilter//\/raw-bundles*/}"
-            BUNDLE_FILTER="${bundleFilter#*raw-bundles/}"
-            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
-            debug "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
-            debug "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
-        elif [ -d "${bundleFilter}/raw-bundles" ]; then
-            BUNDLE_SUB_DIR="${bundleFilter}"
-            debug "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
-        else
-            BUNDLE_FILTER="${bundleFilter}"
-        fi
-    fi
-    setDirs
+    setDirs "${1:-}"
     prereqs
 
     debug "Setting some vars..."
@@ -1307,7 +1308,7 @@ case $ACTION in
         processVars "${@}"
         ;;
     createTestResources)
-        processVars "${@}"
+        setDirs "${@}"
         createTestResources
         ;;
     ciVersion)
