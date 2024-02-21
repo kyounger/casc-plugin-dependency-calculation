@@ -918,8 +918,10 @@ getChangedSources() {
 
 ## Prints a summary (assumes createTestResources has been run, and that some validation results in the form of <bundeName>.json next to <bundeName>.zip)
 getTestResultReport() {
+    local resultsOnlyWithBundleSubDirPrefix="${1:-}"
     local bundleDir=''
     local bundleName=''
+    local bundleNamePrefix=''
     local bundleStatus=''
     local bundleJson=''
     local bundleTxt='' # marker file to say we expect a resulting json
@@ -937,11 +939,18 @@ getTestResultReport() {
         SUMMARY_EOL="\n"
     fi
 
+    # remove any previous summary
+    if [ "true" == "${resultsOnlyWithBundleSubDirPrefix}" ]; then
+        msg=''
+        if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
+            bundleNamePrefix="${BUNDLE_SUB_DIR:-}/"
+        fi
+    fi
     echo "$msg: starting analysis. If you see this, there was a problem during the analysis." > "${TEST_RESOURCES_DIR}/test-summary.txt"
-    echo "Analysing bundles..."
+    echo "INFO: Analysing bundles..."
     while IFS= read -r -d '' bundleDir; do
         bundleName=$(basename "$bundleDir")
-        echo "Looking at bundle: ${bundleName}"
+        echo "INFO: Looking at bundle: ${bundleNamePrefix}${bundleName}"
         bundleTxt=$(find "${TEST_RESOURCES_DIR}" -type f -name "${bundleName}.txt")
         if [ -f "${bundleTxt}" ]; then
             # result json expected at least
@@ -965,11 +974,15 @@ getTestResultReport() {
         if [[ "${bundleStatus}" =~ NOK ]]; then
             problemFound='y'
         fi
-        msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "$bundleName" "$bundleStatus")
-        echo "$msg"
+        if [ "true" == "${resultsOnlyWithBundleSubDirPrefix}" ] && [ "N/A  - NOT TESTED" == "${bundleStatus}" ]; then
+            echo "INFO: Ignoring bundle '${bundleNamePrefix}${bundleName}' since it was not tested and we want actual results only."
+        else
+            msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "${bundleNamePrefix}${bundleName}" "$bundleStatus")
+            echo "INFO: ${bundleNamePrefix}${bundleName}" "$bundleStatus"
+        fi
     done < <(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
-    echo
-    echo "$msg"
+    debug ""
+    debug "$msg"
     printf "%s${SUMMARY_EOL}${SUMMARY_EOL}" "${msg}" > "${TEST_RESOURCES_DIR}/test-summary.txt"
     [ -z "$problemFound" ] || die "Problems found. Dying, alas 'twas so nice..."
 }
@@ -1332,24 +1345,20 @@ case $ACTION in
         getValidationDirs "${@}"
         ;;
     getTestResultReport)
-        processVars "${@}"
-        getTestResultReport
+        processVars
+        getTestResultReport "${@}"
         ;;
     applyBundleConfigMaps)
         processVars "${@}"
         applyBundleConfigMaps
         ;;
     runValidationsChangedOnly)
-        processVars "${@}"
-        runValidationsChangedOnly
+        processVars
+        runValidationsChangedOnly "${@}"
         ;;
     runValidations)
-        processVars "${@}"
-        runValidations
-        ;;
-    runValidationSingle)
-        processVars "${@}"
-        runValidationSingle "${@}"
+        processVars
+        runValidations "${@}"
         ;;
     roots)
         getBundleRoots "$@"
