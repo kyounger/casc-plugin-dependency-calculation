@@ -1351,7 +1351,7 @@ case $ACTION in
         ;;
     runValidationSingle)
         processVars "${@}"
-        runValidationSingle
+        runValidationSingle "${@}"
         ;;
     roots)
         getBundleRoots "$@"
