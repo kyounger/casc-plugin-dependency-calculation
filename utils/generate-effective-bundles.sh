@@ -849,7 +849,7 @@ runValidations()
         local validationBundle='' bundlesFound=''
         validationBundle=$(basename "$validationBundleTestResource")
         for b in $bundles; do
-            local bZip="${validationBundleTestResource}/${b}.zip"
+            local bZip="${validationBundleTestResource}/${b//*\/}.zip"
             [ ! -f "${bZip}" ] || bundlesFound="${bundlesFound} ${bZip}"
         done
         if [ -z "${bundles}" ] || [ -n "$bundlesFound" ]; then
