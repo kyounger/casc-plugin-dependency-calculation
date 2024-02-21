@@ -845,7 +845,7 @@ runValidations()
 {
     local bundles="${1:-}"
     for validationBundleTestResource in "${TEST_RESOURCES_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
-        local validationBundle='' bundlesFound=''
+        local validationBundle=''
         validationBundle=$(basename "$validationBundleTestResource")
         runValidationSingle "$validationBundle" "$bundles"
     done
@@ -855,6 +855,7 @@ runValidations()
 runValidationSingle() {
     local validationBundle="${1}"
     local bundles="${2:-}"
+    local bundlesFound=''
     if [ -z "${bundles}" ] || [ -n "$bundlesFound" ]; then
         echo "Analysing validation bundle '${validationBundle}'..."
         startServer "$validationBundle"
