@@ -840,39 +840,36 @@ runValidationsChangedOnly()
     fi
 }
 
-## Takes 1 optional args (bundles) - if set run only those, otherwise run all validations (assumes the 'test-resources' directory has been created by the 'cascgen testResources')
+## Takes 2 optional args (bundles and validationBundlePrefix) - if set run only those, otherwise run all validations (assumes the 'test-resources' directory has been created by the 'cascgen testResources')
 runValidations()
 {
     local bundles="${1:-}"
-    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
-        local validationBundle=''
+    local validationBundlePrefix="${2:-}"
+    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/${validationBundlePrefix}"*; do
+        local validationBundle='' bundlesFound=''
         validationBundle=$(basename "$validationBundleTestResource")
-        runValidationSingle "$validationBundle" "$bundles"
-    done
-}
-
-## Takes 1 optional args (bundles) - if set run only those, otherwise run all validations (assumes the 'test-resources' directory has been created by the 'cascgen testResources')
-runValidationSingle() {
-    local validationBundle="${1}"
-    local bundles="${2:-}"
-    local bundlesFound=''
-    if [ -z "${bundles}" ] || [ -n "$bundlesFound" ]; then
-        echo "Analysing validation bundle '${validationBundle}'..."
-        startServer "$validationBundle"
-        if [ -n "$bundlesFound" ]; then
-            for bundleZipPath in $bundlesFound; do
-                runCurlValidation "${bundleZipPath}"
-            done
+        for b in $bundles; do
+            local bZip="${validationBundleTestResource}/${b}.zip"
+            [ ! -f "${bZip}" ] || bundlesFound="${bundlesFound} ${bZip}"
+        done
+        if [ -z "${bundles}" ] || [ -n "$bundlesFound" ]; then
+            echo "Analysing validation bundle '${validationBundle}'..."
+            startServer "$validationBundle"
+            if [ -n "$bundlesFound" ]; then
+                for bundleZipPath in $bundlesFound; do
+                    runCurlValidation "${bundleZipPath}"
+                done
+            else
+                for bundleZipPath in "${validationBundleTestResource}/"*.zip; do
+                    runCurlValidation "${bundleZipPath}"
+                done
+            fi
+            stopServer
+            sleep 2
         else
-            for bundleZipPath in "${validationBundleTestResource}/"*.zip; do
-                runCurlValidation "${bundleZipPath}"
-            done
+            echo "Skipping validation bundle '${validationBundle}' since no matching bundles found."
         fi
-        stopServer
-        sleep 2
-    else
-        echo "Skipping validation bundle '${validationBundle}' since no matching bundles found."
-    fi
+    done
 }
 
 changedSourcesAction() {
