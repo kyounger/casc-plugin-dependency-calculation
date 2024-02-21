@@ -1349,6 +1349,10 @@ case $ACTION in
         processVars "${@}"
         runValidations
         ;;
+    runValidationSingle)
+        processVars "${@}"
+        runValidationSingle
+        ;;
     roots)
         getBundleRoots "$@"
         ;;
