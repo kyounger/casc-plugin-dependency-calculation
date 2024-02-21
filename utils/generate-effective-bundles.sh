@@ -974,12 +974,8 @@ getTestResultReport() {
         if [[ "${bundleStatus}" =~ NOK ]]; then
             problemFound='y'
         fi
-        if [ "true" == "${resultsOnlyWithBundleSubDirPrefix}" ] && [ "N/A  - NOT TESTED" == "${bundleStatus}" ]; then
-            echo "INFO: Ignoring bundle '${bundleNamePrefix}${bundleName}' since it was not tested and we want actual results only."
-        else
-            msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "${bundleNamePrefix}${bundleName}" "$bundleStatus")
-            echo "INFO: ${bundleNamePrefix}${bundleName}" "$bundleStatus"
-        fi
+        msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "${bundleNamePrefix}${bundleName}" "$bundleStatus")
+        echo "INFO: ${bundleNamePrefix}${bundleName}" "$bundleStatus"
     done < <(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
     debug ""
     debug "$msg"
