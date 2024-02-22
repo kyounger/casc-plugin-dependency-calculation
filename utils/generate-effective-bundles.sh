@@ -1019,7 +1019,7 @@ applyBundleConfigMaps()
 
 createTestResources() {
     mkdir -p "${TEST_RESOURCES_DIR}"
-    rm -r "${TEST_RESOURCES_DIR:?}/*"
+    rm -r "${TEST_RESOURCES_DIR:?}/*" 2>/dev/null || true
     touch "${TEST_RESOURCES_CHANGED_FILES}" "${TEST_RESOURCES_CHANGED_BUNDLES}"
     for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
         for bundlePath in $(yq '. | head_comment' "${d}/plugins.yaml"); do
