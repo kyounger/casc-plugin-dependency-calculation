@@ -1019,6 +1019,7 @@ applyBundleConfigMaps()
 
 createTestResources() {
     mkdir -p "${TEST_RESOURCES_DIR}"
+    rm -r "${TEST_RESOURCES_DIR:?}/*"
     touch "${TEST_RESOURCES_CHANGED_FILES}" "${TEST_RESOURCES_CHANGED_BUNDLES}"
     for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
         for bundlePath in $(yq '. | head_comment' "${d}/plugins.yaml"); do
@@ -1168,7 +1169,7 @@ findAllKnownCiVersions() {
 
 # To be run after createTestResources. Returns all changed effective bundles, or tests if a given bundle sub dir has changed
 getChangedEffectiveBundles() {
-    local bundleSubDirToCheck="${1:-}"
+    local bundleSubDirToCheck="${1:-"${BUNDLE_SUB_DIR:-}"}"
     local changedEffectiveBundles=''
     changedEffectiveBundles=$(find "${GIT_ROOT}" -type f -name .changed-effective-bundles -exec cat {} \;)
     if [ -z "${bundleSubDirToCheck}" ]; then
@@ -1182,7 +1183,7 @@ getChangedEffectiveBundles() {
 
 # To be run after createTestResources. Returns all changed effective bundles by validation dir
 getValidationDirs() {
-    local bundleSubDirToCheck="${1:-}"
+    local bundleSubDirToCheck="${1:-"${BUNDLE_SUB_DIR:-}"}"
     local validationDirs=''
     validationDirs=$(find "${GIT_ROOT}" -type d -name "${VALIDATIONS_DIR_RELATIVE}" -print)
     if [ -z "${bundleSubDirToCheck}" ]; then
@@ -1215,9 +1216,9 @@ getChangedEffectiveBundlesForValidationDir() {
 }
 
 getValidationDirToChangedBundles() {
-    for d in $(cascgen getValidationDirs "$@"); do
+    for d in $(getValidationDirs) "$@"; do
         local changedBundles=''
-        changedBundles=$(cascgen getChangedEffectiveBundlesForValidationDir "$d" | xargs || true)
+        changedBundles=$(getChangedEffectiveBundlesForValidationDir "$d" | xargs || true)
         if [ -n "$changedBundles" ]; then
             echo "$(basename "$d"):$changedBundles"
         fi
