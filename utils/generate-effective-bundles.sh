@@ -1216,10 +1216,13 @@ getChangedEffectiveBundlesForValidationDir() {
 }
 
 getValidationDirToChangedBundles() {
-    for d in $(getValidationDirs) "$@"; do
+    local includeEmpty="${INCLUDE_EMPTY:-}"
+    for d in $(getValidationDirs "$@"); do
         local changedBundles=''
         changedBundles=$(getChangedEffectiveBundlesForValidationDir "$d" | xargs || true)
         if [ -n "$changedBundles" ]; then
+            echo "$(basename "$d"):$changedBundles"
+        elif [ "true" ==  "${includeEmpty}" ]; then
             echo "$(basename "$d"):$changedBundles"
         fi
     done
