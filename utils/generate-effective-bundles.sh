@@ -1020,7 +1020,7 @@ createTestResources() {
 
 runPrecommit() {
     PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
-    $0 generate > "$PRE_COMMIT_LOG" 2>&1
+    generate > "$PRE_COMMIT_LOG" 2>&1
     # if we:
     # - ran without recreating the plugin catalogs (DRY_RUN=1)
     # - find changes to effective plugins directories
