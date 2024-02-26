@@ -121,6 +121,7 @@ if [ -z "${GIT_ROOT}" ]; then
     debug "WARN: Could not determine GIT_ROOT. Using WORKSPACE as root."
     GIT_ROOT="${WORKSPACE}"
 fi
+CONFIGMAP_INCLUDE_VERSION_IN_NAME="${CONFIGMAP_INCLUDE_VERSION_IN_NAME:-"true"}"
 TEST_RESOURCES_DIR_RELATIVE="test-resources"
 EFFECTIVE_DIR_RELATIVE="effective-bundles"
 VALIDATIONS_DIR_RELATIVE="validation-bundles"
@@ -641,10 +642,13 @@ cleanupUnusedBundles() {
         toolCheck kustomize
         echo -n > "${KUSTOMIZATION_YAML}"
         (cd "$EFFECTIVE_DIR" && {
+            local configmapName=''
             local bundles=''
             bundles=$(find . -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort)
             for d in $bundles; do
-                kustomize edit add configmap "${CI_VERSION_DASHES}-${d}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
+                configmapName="${CI_VERSION_DASHES}-${d}"
+                [ "true" == "${CONFIGMAP_INCLUDE_VERSION_IN_NAME}" ] || configmapName="${d}"
+                kustomize edit add configmap "${configmapName}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
             done
         };)
         echo "INFO: Recreated the kustomisation.yaml"
