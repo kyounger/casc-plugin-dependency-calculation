@@ -948,6 +948,7 @@ processAllDeps() {
   # create if needed
   touch "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
   sort -o "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE" "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE"
+  TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_TXT=$(cat "$TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE")
 }
 
 addEntry() {
@@ -1327,10 +1328,11 @@ reducePluginList() {
       if ! isCapPlugin "$p"; then
         debug "Removing dependency plugins final cleanup - looking at $p..."
         for childToRemove in $(getChildren "$p"); do
-          local possibleParents="${TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR[$childToRemove]-}"
-          for capParent in $possibleParents; do
-            if grep -qE "^($childToRemove)$" <<< "$reducedPluginList" && grep -qE "^($capParent)$" <<< "$reducedPluginList"; then
-                info "Removing child '$childToRemove' from main list due to CAP parent $capParent existing..."
+          local possibleParents=''
+          possibleParents=$(getPossibleParents "$childToRemove") # "${TARGET_PLUGIN_DEPS_CAP_PARENTS_ARR[$childToRemove]-}"
+          for pp in $possibleParents; do
+            if isCapPlugin "$pp" && grep -qE "^($childToRemove)$" <<< "$reducedPluginList" && grep -qE "^($pp)$" <<< "$reducedPluginList"; then
+                info "Removing child '$childToRemove' from main list due to CAP parent $pp existing..."
                 removeFromReduceList "$childToRemove"
                 continue
             fi
@@ -1346,6 +1348,17 @@ removeFromReduceList() {
     tmpReducedPluginList=$(grep -vE "^$1$" <<< "$reducedPluginList")
     reducedPluginList=$tmpReducedPluginList
     reducedList=1
+}
+
+getPossibleParents() {
+  local allParents=''
+  allParents=$(grep -oE ".* -> $1($| )" <<< "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_TXT}" || true)
+  set +e
+  echo "$allParents" \
+    | $SEDCMD -e 's/ -> /\n/g' \
+    | grep -v "\b${1}\b" \
+    | sort -u | xargs
+  set -e
 }
 
 getChildren() {
