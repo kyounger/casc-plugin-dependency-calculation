@@ -902,8 +902,11 @@ changedSourcesAction() {
 getChangedSources() {
     local fromSha='' toSha='' headSha=''
     headSha=$(git rev-parse HEAD)
+    # we should test all regardless
+    if [ "true" == "${TEST_ALL_BUNDLES:-}" ]; then
+        addAllBundlesToChanged
     # we are on a PR
-    if [ -n "${CHANGE_TARGET:-}" ] && [ -n "${BRANCH_NAME:-}" ]; then
+    elif [ -n "${CHANGE_TARGET:-}" ] && [ -n "${BRANCH_NAME:-}" ]; then
         fromSha=$(git rev-parse "origin/${CHANGE_TARGET}")
         toSha=$(git rev-parse "origin/${BRANCH_NAME}")
         changedSourcesAction "$fromSha" "$toSha" "$headSha"
@@ -913,11 +916,15 @@ getChangedSources() {
             changedSourcesAction "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" "$GIT_COMMIT" "$headSha"
         else
             echo "Adding all bundles to the changed list since we are on a release branch for the first time."
-            git ls-files | grep -oE "${EFFECTIVE_DIR_RELATIVE}/.*/" | grep -o '^.*[^/]' | sort -u > "${TEST_RESOURCES_CHANGED_BUNDLES}"
+            addAllBundlesToChanged
         fi
     else
         die "We need CHANGE_TARGET and BRANCH_NAME, or a GIT_COMMIT and optionally GIT_PREVIOUS_SUCCESSFUL_COMMIT."
     fi
+}
+
+addAllBundlesToChanged() {
+    git ls-files | grep -oE "${EFFECTIVE_DIR_RELATIVE}/.*/" | grep -o '^.*[^/]' | sort -u > "${TEST_RESOURCES_CHANGED_BUNDLES}"
 }
 
 ## Prints a summary (assumes createTestResources has been run, and that some validation results in the form of <bundeName>.json next to <bundeName>.zip)
