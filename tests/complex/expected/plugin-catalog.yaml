@@ -10,7 +10,7 @@ configurations:
       ansicolor:
         version: "1.0.2"
       artifactory:
-        version: "4.0.3"
+        version: "4.0.5"
       aws-java-sdk:
         version: "1.12.406-374.v4cdf53953691"
       aws-java-sdk-cloudformation:
@@ -56,7 +56,7 @@ configurations:
       h2-api:
         version: "11.1.4.199-12.v9f4244395f7a_"
       hashicorp-vault-plugin:
-        version: "364.vf5d54b_3dc313"
+        version: "366.v3b_57135510d6"
       ivy:
         version: "2.4"
       job-dsl:
@@ -74,7 +74,7 @@ configurations:
       resource-disposer:
         version: "0.23"
       robot:
-        version: "3.5.0"
+        version: "3.5.1"
       slack:
         version: "664.vc9a_90f8b_c24a_"
       swarm:
