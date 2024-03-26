@@ -1137,6 +1137,8 @@ Plugin Categories:
   fi
   if [ "${PLUGIN_YAML_INCLUDE_HEADER}" -eq 1 ]; then
     HEADER="$HEADER" yq -i '. head_comment=strenv(HEADER)' "$TARGET_PLUGINS_YAML"
+    HEADER="$HEADER" yq -i '. head_comment=strenv(HEADER)' "$TARGET_PLUGIN_CATALOG"
+    HEADER="$HEADER" yq -i '. head_comment=strenv(HEADER)' "$TARGET_PLUGIN_CATALOG_OFFLINE"
   fi
 
   # Plugin comments...
