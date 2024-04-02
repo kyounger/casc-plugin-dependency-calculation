@@ -150,13 +150,13 @@ determineCIVersion() {
             echo "INFO: Setting CI_VERSION according to parent of RAW_DIR (-> $CI_VERSION)."
         fi
         if [ -z "$CI_VERSION" ]; then
-            echo "INFO: Testing CI_VERSION according to GIT_BRANCH env var..."
+            echo "INFO: Testing CI_VERSION according to GIT_BRANCH or CHANGE_TARGET env var..."
             if [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
                 CI_VERSION="${BASH_REMATCH[1]}"
                 echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var (-> $CI_VERSION)."
-            elif [[ "${TARGET_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
+            elif [[ "${CHANGE_TARGET:-}" =~ $CI_DETECTION_PATTERN ]]; then
                 CI_VERSION="${BASH_REMATCH[1]}"
-                echo "INFO: Setting CI_VERSION according to TARGET_BRANCH env var (-> $CI_VERSION)."
+                echo "INFO: Setting CI_VERSION according to CHANGE_TARGET env var (-> $CI_VERSION)."
             fi
         fi
         if [ -z "$CI_VERSION" ]; then
