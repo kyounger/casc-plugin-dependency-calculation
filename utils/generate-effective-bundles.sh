@@ -721,6 +721,8 @@ new File('/var/jenkins_home/secrets/initialAdminToken').text = result
 startServer()
 {
     local validationBundle=$1
+    # stopping any previously started servers
+    stopServer
     # Account for the case where the license is base64 encoded
     if [ -n "${CASC_VALIDATION_LICENSE_KEY_B64:-}" ]; then
         echo "Decoding the license key and cert..."
@@ -729,6 +731,10 @@ startServer()
         CASC_VALIDATION_LICENSE_KEY=$(echo "${CASC_VALIDATION_LICENSE_KEY_B64}" | base64 -d)
         CASC_VALIDATION_LICENSE_CERT=$(echo "${CASC_VALIDATION_LICENSE_CERT_B64}" | base64 -d)
     fi
+    # fail if either CASC_VALIDATION_LICENSE_KEY or CASC_VALIDATION_LICENSE_CERT are not set
+    [ -n "${CASC_VALIDATION_LICENSE_KEY:-}" ] || die "CASC_VALIDATION_LICENSE_KEY is not set."
+    [ -n "${CASC_VALIDATION_LICENSE_CERT:-}" ] || die "CASC_VALIDATION_LICENSE_CERT is not set."
+    # add token script to init.groovy.d
     echo "${TOKEN_SCRIPT}" > /usr/share/jenkins/ref/init.groovy.d/init_02_admin_token.groovy
     export JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS} -Dcore.casc.config.bundle=${VALIDATIONS_DIR}/${validationBundle}"
     echo "Cleaning plugins directory..."
@@ -831,7 +837,7 @@ runValidationsChangedOnly()
 runValidations()
 {
     local bundles="${1:-}"
-    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/"*; do
+    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
         local validationBundle='' bundlesFound=''
         validationBundle=$(basename "$validationBundleTestResource")
         for b in $bundles; do
@@ -877,9 +883,10 @@ changedSourcesAction() {
 }
 
 ## Adds metadata above test-resources
-## Assumes the 'test-resources' directory has been created by the 'cascgen testResources'
+## Assumes the 'test-resources' directory has been created by the 'cascgen createTestResources'
+## Creates:
 ## - .changed-files: all the from the PR
-## - .changed-effective-bundles: space spearated list of changed bundles from the PR
+## - .changed-effective-bundles: space separated list of changed bundles from the PR
 getChangedSources() {
     local fromSha='' toSha='' headSha=''
     headSha=$(git rev-parse HEAD)
@@ -1180,6 +1187,18 @@ case $ACTION in
         processVars "${@}"
         plugins
         generate
+        ;;
+    verify)
+        processVars "${@}"
+        MD5SUM_BEFORE=$(find "${EFFECTIVE_DIR}" "${RAW_DIR}" -type f -exec md5sum {} + | sort -k 2)
+        echo "Effective dir checksum before: $MD5SUM_BEFORE"
+        plugins
+        generate
+        echo "Checking MD5SUM values..."
+        md5sum -c <(echo "$MD5SUM_BEFORE") || die "ERROR: The bundles have changed (see above). Please commit the changes."
+        ;;
+    stopServer)
+        stopServer
         ;;
     vars)
         processVars "${@}"
