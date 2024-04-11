@@ -1031,95 +1031,23 @@ createTestResources() {
 runPrecommit() {
     PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
     $0 generate "${@}" > "$PRE_COMMIT_LOG" 2>&1
-    # if we:
-    # - ran without recreating the plugin catalogs (DRY_RUN=1)
-    # - find changes to effective plugins directories
-    # then:
-    # - we need to update the plugin catalogs before checking...
-    ERROR_REPORT=''
-    ERROR_MSGS=''
-    # fail if non-cached diffs found in raw bundles
-    CHANGED_RAW_DIR=$(git --no-pager diff --stat "$RAW_DIR")
-    CHANGED_RAW_DIR_FULL=$(git --no-pager diff "$RAW_DIR")
-    if [ -n "${CHANGED_RAW_DIR}" ]; then
-        errMsg="Raw bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_RAW_DIR_FULL")
-        echo "Yes changes in raw-bundles"
-    else
-        echo "No  changes in raw-bundles"
-    fi
-    UNTRACKED_RAW_DIR=$(git ls-files "$RAW_DIR" --exclude-standard --others)
-    if [ -n "${UNTRACKED_RAW_DIR}" ]; then
-        errMsg="Raw bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_RAW_DIR")
-        echo "Yes unknown files in raw-bundles"
-    else
-        echo "No  unknown files in raw-bundles"
-    fi
-    # fail if non-cached diffs found in effective bundles
-    CHANGED_EFFECTIVE_DIR=$(git --no-pager diff --stat "$EFFECTIVE_DIR")
-    CHANGED_EFFECTIVE_DIR_FULL=$(git --no-pager diff "$EFFECTIVE_DIR")
-    if [ -n "${CHANGED_EFFECTIVE_DIR}" ]; then
-        errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
-        echo "Yes changes in effective-bundles"
-    else
-        echo "No  changes in effective-bundles"
-    fi
-    UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
-    if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
-        errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
-        echo "Yes unknown files in effective-bundles"
-    else
-        echo "No  unknown files in effective-bundles"
-    fi
-    # optional validation bundles
-    if [ -d "$VALIDATIONS_DIR" ]; then
-        CHANGED_VALIDATIONS_DIR=$(git --no-pager diff --stat "$VALIDATIONS_DIR")
-        CHANGED_VALIDATIONS_DIR_FULL=$(git --no-pager diff "$VALIDATIONS_DIR")
-        if [ -n "${CHANGED_VALIDATIONS_DIR}" ]; then
-            errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
-            echo "Yes changes in validations"
-        else
-            echo "No  changes in validations"
-        fi
-        UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
-        if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
-            errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
-            ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
-            ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
-            echo "Yes unknown files in validations"
-        else
-            echo "No  unknown files in validations"
-        fi
-    fi
-    # return if no differences found
-    if [ -z "$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")" ]; then
-        echo "No changes found. Exiting..."
+    local DIFFS=''
+    DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
+    if [ -z "$DIFFS" ]; then
+        echo "No changes found in raw-bundles"
+        echo "No changes found in effective-bundles"
+        echo "No changes found in validations"
         return 0
-    fi
-
-    if [ -n "${ERROR_MSGS}" ]; then
+    else
         if [ "$DEBUG" -eq 1 ]; then
             echo "SHOWING FULL $PRE_COMMIT_LOG"
             cat "$PRE_COMMIT_LOG"
         fi;
-        echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
-        printf '%s\n\n' "$ERROR_MSGS"
-        printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
+        echo "ERROR: Differences found after pre-commit run - see diff below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
+        printf '\n%s\n\n' "$DIFFS"
         [ -n "${NO_DYING:-}" ] || die "Pre-commit run failed. See above."
         return 1
-    else
-        echo "No error messages"
     fi
-    return 0
 }
 
 # takes the following environment variables:
@@ -1139,7 +1067,7 @@ autocorrect() {
     AUTOCORRECT_COMMIT_USER_NAME="${AUTOCORRECT_COMMIT_USER_NAME:-}"
     AUTOCORRECT_COMMIT_USER_EMAIL="${AUTOCORRECT_COMMIT_USER_EMAIL:-}"
     AUTOCORRECT_COMMIT_AUTHOR="${AUTOCORRECT_COMMIT_AUTHOR:-}"
-    AUTOCORRECT_COMMIT_MESSAGE="${AUTOCORRECT_COMMIT_MESSAGE:-}"
+    AUTOCORRECT_COMMIT_MESSAGE="${AUTOCORRECT_COMMIT_MESSAGE:-"Auto-correcting bundles repository"}"
     # fail if any of the commit environment variables are empty
     [ -n "$AUTOCORRECT_COMMIT_USER_NAME" ] || die "AUTOCORRECT_COMMIT_USER_NAME is not set."
     [ -n "$AUTOCORRECT_COMMIT_USER_EMAIL" ] || die "AUTOCORRECT_COMMIT_USER_EMAIL is not set."
@@ -1290,7 +1218,7 @@ case $ACTION in
     verify)
         processVars "${@}"
         plugins
-        NO_DYING=1 runPrecommit || autocorrect
+        NO_DYING=1 runPrecommit
         ;;
     autocorrect)
         processVars "${@}"
