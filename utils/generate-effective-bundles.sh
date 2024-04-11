@@ -1038,18 +1038,25 @@ runPrecommit() {
     # - we need to update the plugin catalogs before checking...
     ERROR_REPORT=''
     ERROR_MSGS=''
-    CHANGED_PLUGINS_FILES=$(git ls-files --others --modified "${EFFECTIVE_DIR}"/**/plugins)
-    CACHED_PLUGINS_FILES=$(git diff --name-only --cached "${EFFECTIVE_DIR}"/**/plugins)
-    if [ "$DRY_RUN" -ne 0 ] && [ -n "$CHANGED_PLUGINS_FILES" ]; then
-        echo ""
-        errMsg="CHANGED_PLUGINS_FILES: Changes to plugins detected - please generate manually using DRY_RUN=0 to recreate the plugin catalog. !!!Pro Tip!!! use the filtering options to save time'. Execution log: $PRE_COMMIT_LOG"
-        ERROR_MSGS="${ERROR_MSGS}\n${errMsg}"
-        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_PLUGINS_FILES")
-    elif [ "$DRY_RUN" -ne 0 ] && [ -n "$CACHED_PLUGINS_FILES" ]; then
-        echo ""
-        echo "WARNING >>>> Cached plugin files found! Reminder to please ensure you recreated the plugin catalog using DRY_RUN=0"
-        echo "WARNING >>>> Cached plugin files found! Ignore this if you have recreated the plugin catalog."
-        echo ""
+    # fail if non-cached diffs found in raw bundles
+    CHANGED_RAW_DIR=$(git --no-pager diff --stat "$RAW_DIR")
+    CHANGED_RAW_DIR_FULL=$(git --no-pager diff "$RAW_DIR")
+    if [ -n "${CHANGED_RAW_DIR}" ]; then
+        errMsg="Raw bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_RAW_DIR_FULL")
+        echo "Yes changes in raw-bundles"
+    else
+        echo "No  changes in raw-bundles"
+    fi
+    UNTRACKED_RAW_DIR=$(git ls-files "$RAW_DIR" --exclude-standard --others)
+    if [ -n "${UNTRACKED_RAW_DIR}" ]; then
+        errMsg="Raw bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
+        ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
+        ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_RAW_DIR")
+        echo "Yes unknown files in raw-bundles"
+    else
+        echo "No  unknown files in raw-bundles"
     fi
     # fail if non-cached diffs found in effective bundles
     CHANGED_EFFECTIVE_DIR=$(git --no-pager diff --stat "$EFFECTIVE_DIR")
@@ -1058,16 +1065,18 @@ runPrecommit() {
         errMsg="Effective bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
         ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
         ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_EFFECTIVE_DIR_FULL")
+        echo "Yes changes in effective-bundles"
     else
-        echo "No changes in effective-bundles"
+        echo "No  changes in effective-bundles"
     fi
     UNTRACKED_EFFECTIVE_DIR=$(git ls-files "$EFFECTIVE_DIR" --exclude-standard --others)
     if [ -n "${UNTRACKED_EFFECTIVE_DIR}" ]; then
         errMsg="Effective bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
         ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
         ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_EFFECTIVE_DIR")
+        echo "Yes unknown files in effective-bundles"
     else
-        echo "No unknown files in effective-bundles"
+        echo "No  unknown files in effective-bundles"
     fi
     # optional validation bundles
     if [ -d "$VALIDATIONS_DIR" ]; then
@@ -1077,31 +1086,121 @@ runPrecommit() {
             errMsg="Validations bundles changed - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
             ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
             ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$CHANGED_VALIDATIONS_DIR_FULL")
+            echo "Yes changes in validations"
         else
-            echo "No changes in validations"
+            echo "No  changes in validations"
         fi
         UNTRACKED_VALIDATIONS_DIR=$(git ls-files "$VALIDATIONS_DIR" --exclude-standard --others)
         if [ -n "${UNTRACKED_VALIDATIONS_DIR}" ]; then
             errMsg="Validations bundles contains untracked files - please stage them before committing. Execution log: $PRE_COMMIT_LOG"
             ERROR_MSGS=$(printf '%s\n%s' "${ERROR_MSGS}" "${errMsg}")
             ERROR_REPORT=$(printf '%s\n\n%s\n\n%s\n\n' "${ERROR_REPORT}" "${errMsg}" "$UNTRACKED_VALIDATIONS_DIR")
+            echo "Yes unknown files in validations"
         else
-            echo "No unknown files in validations"
+            echo "No  unknown files in validations"
         fi
     fi
+    # return if no differences found
+    if [ -z "$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")" ]; then
+        echo "No changes found. Exiting..."
+        return 0
+    fi
+
     if [ -n "${ERROR_MSGS}" ]; then
         if [ "$DEBUG" -eq 1 ]; then
             echo "SHOWING FULL $PRE_COMMIT_LOG"
             cat "$PRE_COMMIT_LOG"
-            printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
         fi;
         echo "ERROR: Differences found after pre-commit run - summary below. If DEBUG=1, the build log ($PRE_COMMIT_LOG) and full report can be seen above."
         printf '%s\n\n' "$ERROR_MSGS"
-        die "Pre-commit run failed. See above."
+        printf '\n\n%s\n\n%s\n\n' "SHOWING FULL ERROR_REPORT" "$ERROR_REPORT"
+        [ -n "${NO_DYING:-}" ] || die "Pre-commit run failed. See above."
+        return 1
     else
         echo "No error messages"
     fi
+    return 0
 }
+
+# takes the following environment variables:
+# - AUTOCORRECT: 1 to enable auto-correct, 0 to disable
+# - AUTOCORRECT_SAME_COMMIT: 1 to amend the current commit, 0 to create a new commit
+# - AUTOCORRECT_DRY_RUN: 1 to not push changes, 0 to push changes
+# - AUTOCORRECT_SKIP_BRANCH_CHECKOUT: 1 to skip the branch checkout, 0 to checkout the branch
+# - AUTOCORRECT_COMMIT_USER_NAME: the git user to use
+# - AUTOCORRECT_COMMIT_USER_EMAIL: the git user to use
+# - AUTOCORRECT_COMMIT_AUTHOR: the git user to use
+# - AUTOCORRECT_COMMIT_MESSAGE: the commit message to use
+autocorrect() {
+    AUTOCORRECT="${AUTOCORRECT:-0}"
+    AUTOCORRECT_SAME_COMMIT="${AUTOCORRECT_SAME_COMMIT:-0}"
+    AUTOCORRECT_DRY_RUN="${AUTOCORRECT_DRY_RUN:-0}"
+    AUTOCORRECT_SKIP_BRANCH_CHECKOUT="${AUTOCORRECT_SKIP_BRANCH_CHECKOUT:-0}"
+    AUTOCORRECT_COMMIT_USER_NAME="${AUTOCORRECT_COMMIT_USER_NAME:-}"
+    AUTOCORRECT_COMMIT_USER_EMAIL="${AUTOCORRECT_COMMIT_USER_EMAIL:-}"
+    AUTOCORRECT_COMMIT_AUTHOR="${AUTOCORRECT_COMMIT_AUTHOR:-}"
+    AUTOCORRECT_COMMIT_MESSAGE="${AUTOCORRECT_COMMIT_MESSAGE:-}"
+    # fail if any of the commit environment variables are empty
+    [ -n "$AUTOCORRECT_COMMIT_USER_NAME" ] || die "AUTOCORRECT_COMMIT_USER_NAME is not set."
+    [ -n "$AUTOCORRECT_COMMIT_USER_EMAIL" ] || die "AUTOCORRECT_COMMIT_USER_EMAIL is not set."
+    [ -n "$AUTOCORRECT_COMMIT_AUTHOR" ] || die "AUTOCORRECT_COMMIT_AUTHOR is not set."
+    [ -n "$AUTOCORRECT_COMMIT_MESSAGE" ] || die "AUTOCORRECT_COMMIT_MESSAGE is not set."
+
+    # return if no differences found
+    if [ -z "$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")" ]; then
+        echo "No changes found. Exiting..."
+        return 0
+    fi
+
+    # Set dry run for git
+    AUTOCORRECT_COMMIT_DRY_RUN=()
+    if [ "$AUTOCORRECT_DRY_RUN" -eq 1 ]; then
+        echo "ATTENTION: Setting dry run for git..."
+        AUTOCORRECT_COMMIT_DRY_RUN=('--dry-run')
+    fi
+
+    if [ "$AUTOCORRECT" -eq 1 ]; then
+        echo "Auto-correcting..."
+
+        # if CHANGE_BRANCH is set, checkout that branch, die otherwise
+        if [ -n "${CHANGE_BRANCH:-}" ]; then
+            # ensure we have the branch in question
+            git config --add remote.origin.fetch "+refs/heads/$CHANGE_BRANCH:refs/remotes/origin/$CHANGE_BRANCH"
+            git config --get-all remote.origin.fetch
+            git fetch --depth=1 origin "$CHANGE_BRANCH"
+            git checkout "${CHANGE_BRANCH}"
+        elif [ "$AUTOCORRECT_SKIP_BRANCH_CHECKOUT" -ne 1 ]; then
+            die "We do not seem to be on a PR branch. Not autocorrecting on this branch."
+        fi
+
+        # add the files
+        git add "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}"
+
+        # Commit and push changes back
+        if [ "$AUTOCORRECT_SAME_COMMIT" -eq 1 ]; then
+            echo "Amending the current commit..."
+            git pull
+            git \
+                -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
+                -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
+                commit --amend --no-edit "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
+            git push origin -f "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
+        else
+            git \
+                -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
+                -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
+                commit -m "$AUTOCORRECT_COMMIT_MESSAGE" \
+                --author="$AUTOCORRECT_COMMIT_AUTHOR" \
+                "${AUTOCORRECT_COMMIT_DRY_RUN[@]}" || echo "No files added to commit"
+            git push origin "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
+        fi
+        echo "Changes pushed successfully."
+    else
+        die "Changed files found above and no autocorrect defined!"
+    fi
+}
+
+
 
 copyScriptsToAnotherDirectory() {
     local destDir="${1-}"
@@ -1190,12 +1289,12 @@ case $ACTION in
         ;;
     verify)
         processVars "${@}"
-        MD5SUM_BEFORE=$(find "${EFFECTIVE_DIR}" "${RAW_DIR}" -type f -exec md5sum {} + | sort -k 2)
-        echo "Effective dir checksum before: $MD5SUM_BEFORE"
         plugins
-        generate
-        echo "Checking MD5SUM values..."
-        md5sum -c <(echo "$MD5SUM_BEFORE") || die "ERROR: The bundles have changed (see above). Please commit the changes."
+        NO_DYING=1 runPrecommit || autocorrect
+        ;;
+    autocorrect)
+        processVars "${@}"
+        autocorrect
         ;;
     stopServer)
         stopServer
