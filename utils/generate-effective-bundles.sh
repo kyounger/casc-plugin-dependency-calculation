@@ -63,6 +63,7 @@ setDirs() {
     RAW_DIR="${WORKSPACE}/raw-bundles"
 
     TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
+    TEST_RESOURCES_CI_IMAGE="${TEST_RESOURCES_DIR}/.ci-image"
     TEST_RESOURCES_CHANGED_FILES="${TEST_RESOURCES_DIR}/.changed-files"
     TEST_RESOURCES_CHANGED_BUNDLES="${TEST_RESOURCES_DIR}/.changed-effective-bundles"
 
@@ -101,6 +102,20 @@ MIN_VER_YQ="4.35.2"
 
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
 CI_TYPE="${CI_TYPE:-mm}"
+
+# default images for the CI types
+declare -A CI_TYPE_DEFAULT_IMAGES
+CI_TYPE_DEFAULT_IMAGES[mm]="cloudbees/cloudbees-core-mm"
+CI_TYPE_DEFAULT_IMAGES[oc]="cloudbees/cloudbees-cloud-core-oc"
+# CI_IMAGE not empty, get based on CI_TYPE, testing for key in array
+if [ -z "${CI_IMAGE:-}" ]; then
+    if [ -n "${CI_TYPE_DEFAULT_IMAGES[$CI_TYPE]:-}" ]; then
+        CI_IMAGE="${CI_TYPE_DEFAULT_IMAGES[$CI_TYPE]}"
+    else
+        die "CI_TYPE '${CI_TYPE}' is not supported. Please use one of '${!CI_TYPE_DEFAULT_IMAGES[*]}' or set the CI_IMAGE variable."
+    fi
+fi
+
 MINIMUM_PLUGINS_CASC_CONTROLLER="cloudbees-casc-items-controller"
 MINIMUM_PLUGINS_CASC_OC="cloudbees-casc-items-server cloudbees-casc-items-commons"
 MINIMUM_PLUGINS_CASC_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and, if using items, "
@@ -256,6 +271,8 @@ processVars() {
     EFFECTIVE_DIR=$EFFECTIVE_DIR
     BUNDLE_FILTER=$BUNDLE_FILTER
     CI_VERSION=$CI_VERSION
+    CI_TYPE=$CI_TYPE
+    CI_IMAGE=$CI_IMAGE
     GIT_COMMIT=${GIT_COMMIT:-}
     GIT_PREVIOUS_SUCCESSFUL_COMMIT=${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}
     GIT_BRANCH=${GIT_BRANCH:-}
@@ -1022,10 +1039,14 @@ createTestResources() {
         | tr '-' '.' \
         | sort -u > "${TEST_RESOURCES_CI_VERSIONS}"
     # sanity check
-    if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -ne 1 ]]; then
+    local ciVersionsFound=''
+    ciVersionsFound=$(cat "${TEST_RESOURCES_CI_VERSIONS}")
+    if [[ $(wc -l <<< "$ciVersionsFound") -ne 1 ]]; then
         die "ERROR: Multiple or zero versions found in ${TEST_RESOURCES_CI_VERSIONS}. See below:
-        $(cat "${TEST_RESOURCES_CI_VERSIONS}")"
+        $ciVersionsFound"
     fi
+    # Add CI_IMAGE to the test resources
+    echo "${CI_IMAGE}:${ciVersionsFound}" > "${TEST_RESOURCES_CI_IMAGE}"
 }
 
 runPrecommit() {
