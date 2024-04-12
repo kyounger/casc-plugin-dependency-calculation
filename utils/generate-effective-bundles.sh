@@ -58,9 +58,12 @@ setDirs() {
 
     # assuming some variables - can be overwritten
     TEST_RESOURCES_DIR="${WORKSPACE}/test-resources"
-    EFFECTIVE_DIR="${WORKSPACE}/effective-bundles"
-    VALIDATIONS_DIR="${WORKSPACE}/validation-bundles"
-    RAW_DIR="${WORKSPACE}/raw-bundles"
+    EFFECTIVE_DIR_NAME="effective-bundles"
+    VALIDATIONS_DIR_NAME="validation-bundles"
+    RAW_DIR_NAME="raw-bundles"
+    EFFECTIVE_DIR="${WORKSPACE}/${EFFECTIVE_DIR_NAME}"
+    VALIDATIONS_DIR="${WORKSPACE}/${VALIDATIONS_DIR_NAME}"
+    RAW_DIR="${WORKSPACE}/${RAW_DIR_NAME}"
 
     TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
     TEST_RESOURCES_CI_IMAGE="${TEST_RESOURCES_DIR}/.ci-image"
@@ -1123,27 +1126,18 @@ autocorrect() {
         fi
 
         # add the files
-        git add "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}"
+        git add "${EFFECTIVE_DIR_NAME}" "${RAW_DIR_NAME}" "${VALIDATIONS_DIR_NAME}"
 
         # Commit and push changes back
-        if [ "$AUTOCORRECT_SAME_COMMIT" -eq 1 ]; then
-            echo "Amending the current commit..."
-            git pull
-            git \
-                -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
-                -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
-                commit --amend --no-edit "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
-            git push origin -f "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
-        else
-            git \
-                -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
-                -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
-                commit -m "$AUTOCORRECT_COMMIT_MESSAGE" \
-                --author="$AUTOCORRECT_COMMIT_AUTHOR" \
-                "${AUTOCORRECT_COMMIT_DRY_RUN[@]}" || echo "No files added to commit"
-            git push origin "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
-        fi
-        echo "Changes pushed successfully."
+        git \
+            -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
+            -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
+            commit -m "$AUTOCORRECT_COMMIT_MESSAGE" \
+            --author="$AUTOCORRECT_COMMIT_AUTHOR" \
+            "${AUTOCORRECT_COMMIT_DRY_RUN[@]}" || echo "No files added to commit"
+
+        git push origin "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
+        echo "Changes pushed successfully ${AUTOCORRECT_COMMIT_DRY_RUN[*]}."
     else
         die "Changed files found above and no autocorrect defined!"
     fi
