@@ -149,6 +149,9 @@ if [ -z "${CI_IMAGE:-}" ]; then
     fi
 fi
 
+# when running commands on all roots, fail fast if one fails
+ROOTS_COMMAND_FAIL_FAST="${ROOTS_COMMAND_FAIL_FAST:-1}"
+
 MINIMUM_PLUGINS_CASC_CONTROLLER="cloudbees-casc-items-controller"
 MINIMUM_PLUGINS_CASC_OC="cloudbees-casc-items-server cloudbees-casc-items-commons"
 MINIMUM_PLUGINS_CASC_ERR="Minimum plugins error - you need at a minimum cloudbees-casc-client and, if using items, "
@@ -1200,10 +1203,15 @@ getBundleRoots() {
     bundleRoots=$(git ls-files "**/*.bundle.yaml" | cut -d/ -f1 | grep -vE "(${RAW_DIR_NAME}|${VALIDATIONS_DIR_NAME})" | sort -u | xargs || true)
     bundleRoots="${bundleRoots:-.}"
     if [ -n "${*}" ]; then
+        local failed=''
         for root in $bundleRoots; do
-            echo "INFO: < < < ROOT COMMAND > > > Running command '${*}' in root '$root'"
-            BUNDLE_SUB_DIR="$root" $0 "${@}"
+            echo "INFO: < < < ROOT COMMAND > > > Running command '${*}' in root '$root' (ROOTS_COMMAND_FAIL_FAST=${ROOTS_COMMAND_FAIL_FAST:-0})..."
+            if ! BUNDLE_SUB_DIR="$root" $0 "${@}"; then
+                failed='y'
+                [ "${ROOTS_COMMAND_FAIL_FAST}" -eq 1 ] && break
+            fi
         done
+        [ -z "$failed" ] || die "Failed to run command '${*}' in all root directories."
     else
         echo "${bundleRoots}"
     fi
