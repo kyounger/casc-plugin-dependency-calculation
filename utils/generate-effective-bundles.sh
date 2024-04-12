@@ -9,7 +9,7 @@ export LC_ALL=C
 loadDotenv() {
     local dotEnvFile="${1:-"${WORKSPACE}"}/.env"
     if [ -f "${dotEnvFile}" ]; then
-        echo "INFO: Found .env sourcing the file: ${dotEnvFile}"
+        debug "INFO: Found .env sourcing the file: ${dotEnvFile}"
         # check for allexport...
         if [ "$-" = "${-%a*}" ]; then
             # allexport is not set
@@ -25,45 +25,57 @@ loadDotenv() {
 }
 
 setDirs() {
-    GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
-    WORKSPACE="${WORKSPACE:-$(pwd)}"
-    if [ -z "${GIT_ROOT}" ]; then
-        echo "WARN: Could not determine GIT_ROOT. Using WORKSPACE as root."
-        GIT_ROOT="${WORKSPACE}"
-    fi
-    if [ "${WORKSPACE}" != "${GIT_ROOT}" ]; then
-        BUNDLE_SUB_DIR="${WORKSPACE#"${GIT_ROOT}"/}"
-        echo "INFO: Setting BUNDLE_SUB_DIR to ${BUNDLE_SUB_DIR}"
+    local bundleFilter="${1:-}"
+    BUNDLE_FILTER=''
+    if [ -n "${bundleFilter}" ]; then
+        if [[ "$bundleFilter" =~ ^raw-bundles\/.* ]]; then
+            BUNDLE_FILTER="${bundleFilter#raw-bundles/}"
+            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
+            debug "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
+        elif [[ "$bundleFilter" =~ .*\/raw-bundles\/.* ]]; then
+            BUNDLE_SUB_DIR="${bundleFilter//\/raw-bundles*/}"
+            BUNDLE_FILTER="${bundleFilter#*raw-bundles/}"
+            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
+            debug "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
+            debug "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
+        elif [ -d "${bundleFilter}/raw-bundles" ]; then
+            BUNDLE_SUB_DIR="${bundleFilter}"
+            debug "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
+        else
+            BUNDLE_FILTER="${bundleFilter}"
+        fi
     fi
 
-    VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
+    loadDotenv
     VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX_ORIG}"
+    # set the bundle sub dir detected from the current workspace
+    if [ "${WORKSPACE}" != "${GIT_ROOT}" ]; then
+        BUNDLE_SUB_DIR="${WORKSPACE#"${GIT_ROOT}"/}"
+        debug "INFO: Setting BUNDLE_SUB_DIR to ${BUNDLE_SUB_DIR}"
+    fi
     [ "${BUNDLE_SUB_DIR:-}" != '.' ] || BUNDLE_SUB_DIR=''
     if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
         # set the prefix to include the bundle sub dir
         VALIDATIONS_BUNDLE_PREFIX="${VALIDATIONS_BUNDLE_PREFIX}${BUNDLE_SUB_DIR}-"
         # check to see the workspace already includes the bundle sub dir
         if [[ $(basename "${WORKSPACE}") == "${BUNDLE_SUB_DIR}" ]]; then
-            echo "INFO: BUNDLE_SUB_DIR already part of WORKSPACE: ${WORKSPACE}"
+            debug "INFO: BUNDLE_SUB_DIR already part of WORKSPACE: ${WORKSPACE}"
         else
-            echo "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
-            WORKSPACE="${WORKSPACE}/${BUNDLE_SUB_DIR}"
+            debug "INFO: Setting WORKSPACE to BUNDLE_SUB_DIR: ${WORKSPACE}/${BUNDLE_SUB_DIR}"
+            TEST_RESOURCES_DIR_RELATIVE="${BUNDLE_SUB_DIR}/${TEST_RESOURCES_DIR_NAME}"
+            EFFECTIVE_DIR_RELATIVE="${BUNDLE_SUB_DIR}/${EFFECTIVE_DIR_NAME}"
+            VALIDATIONS_DIR_RELATIVE="${BUNDLE_SUB_DIR}/${VALIDATIONS_DIR_NAME}"
+            RAW_DIR_RELATIVE="${BUNDLE_SUB_DIR}/${RAW_DIR_NAME}"
         fi
-        # load .env in parent dir if present
-        local parentDir=''
-        parentDir=$(dirname "${WORKSPACE}")
-        loadDotenv "$parentDir"
+        # load .env in the bundle sub dir
+        loadDotenv "${WORKSPACE}/${BUNDLE_SUB_DIR}"
     fi
-    loadDotenv
 
     # assuming some variables - can be overwritten
-    TEST_RESOURCES_DIR="${WORKSPACE}/test-resources"
-    EFFECTIVE_DIR_NAME="effective-bundles"
-    VALIDATIONS_DIR_NAME="validation-bundles"
-    RAW_DIR_NAME="raw-bundles"
-    EFFECTIVE_DIR="${WORKSPACE}/${EFFECTIVE_DIR_NAME}"
-    VALIDATIONS_DIR="${WORKSPACE}/${VALIDATIONS_DIR_NAME}"
-    RAW_DIR="${WORKSPACE}/${RAW_DIR_NAME}"
+    TEST_RESOURCES_DIR="${WORKSPACE}/${TEST_RESOURCES_DIR_RELATIVE}"
+    EFFECTIVE_DIR="${WORKSPACE}/${EFFECTIVE_DIR_RELATIVE}"
+    VALIDATIONS_DIR="${WORKSPACE}/${VALIDATIONS_DIR_RELATIVE}"
+    RAW_DIR="${WORKSPACE}/${RAW_DIR_RELATIVE}"
 
     TEST_RESOURCES_CI_VERSIONS="${TEST_RESOURCES_DIR}/.ci-versions"
     TEST_RESOURCES_CI_IMAGE="${TEST_RESOURCES_DIR}/.ci-image"
@@ -96,12 +108,30 @@ ver() {
     echo "$@" | awk -F. '{ printf("%d%03d%03d", $1,$2,$3); }'
 }
 
-die() { echo "$*"; exit 1; }
+die() { echo "$*"  >&2; exit 1; }
 
-debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*"; fi; }
+debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*" >&2; fi; }
 
 # minimal tool versions
 MIN_VER_YQ="4.35.2"
+
+# set the root of the git repo and the workspace
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+WORKSPACE="${WORKSPACE:-$(pwd)}"
+if [ -z "${GIT_ROOT}" ]; then
+    debug "WARN: Could not determine GIT_ROOT. Using WORKSPACE as root."
+    GIT_ROOT="${WORKSPACE}"
+fi
+CONFIGMAP_INCLUDE_VERSION_IN_NAME="${CONFIGMAP_INCLUDE_VERSION_IN_NAME:-"true"}"
+TEST_RESOURCES_DIR_NAME="test-resources"
+EFFECTIVE_DIR_NAME="effective-bundles"
+VALIDATIONS_DIR_NAME="validation-bundles"
+RAW_DIR_NAME="raw-bundles"
+TEST_RESOURCES_DIR_RELATIVE="${TEST_RESOURCES_DIR_NAME}"
+EFFECTIVE_DIR_RELATIVE="${EFFECTIVE_DIR_NAME}"
+VALIDATIONS_DIR_RELATIVE="${VALIDATIONS_DIR_NAME}"
+RAW_DIR_RELATIVE="${RAW_DIR_NAME}"
+VALIDATIONS_BUNDLE_PREFIX_ORIG="val-"
 
 MD5SUM_EMPTY_STR=$(echo -n | md5sum | cut -d' ' -f 1)
 CI_TYPE="${CI_TYPE:-mm}"
@@ -162,13 +192,13 @@ determineCIVersion() {
         versionDir=$(dirname "$RAW_DIR")
         versionDirName=$(basename "$versionDir")
         # test parent dir
-        echo "INFO: Testing CI_VERSION according to parent of RAW_DIR..."
+        debug "INFO: Testing CI_VERSION according to parent of RAW_DIR..."
         if [[ "$versionDirName" =~ $CI_DETECTION_PATTERN ]]; then
             CI_VERSION="${BASH_REMATCH[1]}"
             echo "INFO: Setting CI_VERSION according to parent of RAW_DIR (-> $CI_VERSION)."
         fi
         if [ -z "$CI_VERSION" ]; then
-            echo "INFO: Testing CI_VERSION according to GIT_BRANCH or CHANGE_TARGET env var..."
+            debug "INFO: Testing CI_VERSION according to GIT_BRANCH or CHANGE_TARGET env var..."
             if [[ "${GIT_BRANCH:-}" =~ $CI_DETECTION_PATTERN ]]; then
                 CI_VERSION="${BASH_REMATCH[1]}"
                 echo "INFO: Setting CI_VERSION according to GIT_BRANCH env var (-> $CI_VERSION)."
@@ -178,7 +208,7 @@ determineCIVersion() {
             fi
         fi
         if [ -z "$CI_VERSION" ]; then
-            echo "INFO: Testing CI_VERSION according to git branch from command..."
+            debug "INFO: Testing CI_VERSION according to git branch from command..."
             if command -v git &> /dev/null; then
                 local gitBranch=''
                 gitBranch=$(git rev-parse --abbrev-ref HEAD)
@@ -189,7 +219,7 @@ determineCIVersion() {
             fi
         fi
         if [ -z "$CI_VERSION" ]; then
-            echo "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
+            debug "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
             if [ -f "${TEST_RESOURCES_CI_VERSIONS}" ]; then
                 # Used in PR use cases where the CI_VERSION cannot be determined otherwise
                 if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
@@ -237,35 +267,17 @@ prereqs() {
 }
 
 processVars() {
-    local bundleFilter="${1:-}"
-    BUNDLE_FILTER=''
-    if [ -n "${bundleFilter}" ]; then
-        if [[ "$bundleFilter" =~ ^raw-bundles\/.* ]]; then
-            BUNDLE_FILTER="${bundleFilter#raw-bundles/}"
-            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
-            echo "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
-        elif [[ "$bundleFilter" =~ .*\/raw-bundles\/.* ]]; then
-            BUNDLE_SUB_DIR="${bundleFilter//\/raw-bundles*/}"
-            BUNDLE_FILTER="${bundleFilter#*raw-bundles/}"
-            BUNDLE_FILTER="${BUNDLE_FILTER//\//}"
-            echo "INFO: Filtering - BUNDLE_FILTER set to '$BUNDLE_FILTER' (from '$bundleFilter')"
-            echo "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
-        elif [ -d "${bundleFilter}/raw-bundles" ]; then
-            BUNDLE_SUB_DIR="${bundleFilter}"
-            echo "INFO: Filtering - BUNDLE_SUB_DIR set to '$BUNDLE_SUB_DIR' (from '$bundleFilter')"
-        fi
-    fi
-    setDirs
+    setDirs "${1:-}"
     prereqs
 
-    echo "Setting some vars..."
+    debug "Setting some vars..."
     [ "$DEBUG" -eq 1 ] && COPY_CMD=(cp -v) || COPY_CMD=(cp)
     [ -f "${CASCDEPS_TOOL}" ] || die "CASCDEPS_TOOL '${CASCDEPS_TOOL}' is not a file"
     [ -x "${CASCDEPS_TOOL}" ] || die "CASCDEPS_TOOL '${CASCDEPS_TOOL}' is not executable"
     [ -d "${RAW_DIR}" ] || die "RAW_DIR '${RAW_DIR}' is not a directory"
     [ -d "${EFFECTIVE_DIR}" ] || die "EFFECTIVE_DIR '${EFFECTIVE_DIR}'  is not a directory"
     determineCIVersion
-    echo "Running with:
+    debug "INFO: Running with:
     CASCGEN_TOOL=$CASCGEN_TOOL
     CASCDEPS_TOOL=$CASCDEPS_TOOL
     TARGET_BASE_DIR=$TARGET_BASE_DIR
@@ -346,7 +358,7 @@ generate() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         i=0
-        echo "INFO: Creating bundle '$targetDirName' using parents '$BUNDLE_PARENTS'"
+        debug "INFO: Creating bundle '$targetDirName' using parents '$BUNDLE_PARENTS'"
         for parent in ${BUNDLE_PARENTS:-}; do
             parentDir="${RAW_DIR}/${parent}"
             parentBundleYaml=$(find "${parentDir}/" -name "*bundle.yaml")
@@ -426,7 +438,7 @@ generate() {
         echo ""
         if [ -n "$TREE_CMD" ]; then
             echo "INFO: Resulting files created using tree..."
-            tree "$targetDir"
+            tree --noreport "$targetDir"
         else
             echo "INFO: Resulting files created using poor man's tree..."
             echo "$(cd "${targetDir}"; find . | $SEDCMD -e "s/[^-][^\/]*\// |/g" -e "s/|\([^ ]\)/|-\1/")"
@@ -455,15 +467,15 @@ replacePluginCatalog() {
 
     # do we even have plugins files?
     if [ "yq --no-doc .plugins" == "${PLUGINS_LIST_CMD[*]}" ]; then
-        echo "No plugins yaml files found.}"
-        echo "Removing any previous catalog files..."
+        debug "No plugins yaml files found."
+        debug "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
         return 0
     fi
 
     if [ -n "${PLUGIN_CATALOG_OFFLINE_URL_BASE:-}" ]; then
-        echo "Detected the PLUGIN_CATALOG_OFFLINE_URL_BASE variable. Using the offline catalog."
+        echo "INFO: Detected the PLUGIN_CATALOG_OFFLINE_URL_BASE variable. Using the offline catalog."
         CASCDEPS_TOOL_CMD+=(-C "$finalPluginCatalogYaml")
     else
         CASCDEPS_TOOL_CMD+=(-c "$finalPluginCatalogYaml")
@@ -480,25 +492,25 @@ replacePluginCatalog() {
     checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
     local localDryRun="${DRY_RUN}"
+    debug ""
+    debug "AUTO_UPDATE_CATALOG - Plugin catalog version has the format <CI_VERSION_DASHES>-<EFFECTIVE_PLUGINS_MD5SUM>-<CATALOG_INCLUDE_PLUGINS_MD5SUM>"
     echo ""
-    echo "AUTO_UPDATE_CATALOG - Plugin catalog version has the format <CI_VERSION_DASHES>-<EFFECTIVE_PLUGINS_MD5SUM>-<CATALOG_INCLUDE_PLUGINS_MD5SUM>"
-    echo ""
-    echo "AUTO_UPDATE_CATALOG - Checking effective plugins checksum 'actual: $checkSumPluginsActual' vs 'expected: $checkSumPluginsExpected'"
+    echo "INFO: AUTO_UPDATE_CATALOG - Checking effective plugins checksum 'actual: $checkSumPluginsActual' vs 'expected: $checkSumPluginsExpected'"
     if [ "$checkSumPluginsActual" != "$checkSumPluginsExpected" ]; then
         if [ -z "$checkSumPluginsActual" ]; then
-            echo "AUTO_UPDATE_CATALOG - no current plugin catalog found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
+            echo "INFO: AUTO_UPDATE_CATALOG - no current plugin catalog found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
             localDryRun=0
         elif [ "$AUTO_UPDATE_CATALOG" -eq 0 ] && [ "$DRY_RUN" -eq 1 ]; then
             echo "WARNING: AUTO_UPDATE_CATALOG - differences in plugins checksum (found in head comment of plugin catalog) found but neither AUTO_UPDATE_CATALOG=1 nor is DRY_RUN=0"
         else
-            echo "AUTO_UPDATE_CATALOG - differences in plugins found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
+            echo "INFO: AUTO_UPDATE_CATALOG - differences in plugins found. Automatically refreshing the plugin catalog (setting DRY_RUN=0)..."
             localDryRun=0
         fi
     fi
     echo ""
     echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
     if [ "$localDryRun" -eq 0 ]; then
-        echo "Removing any previous catalog files..."
+        debug "Removing any previous catalog files..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         local bundleDirName=''
         bundleDirName=$(basename "$bundleDir")
@@ -516,7 +528,7 @@ replacePluginCatalog() {
         "${CASCDEPS_TOOL_CMD[@]}"
         unset PLUGIN_CATALOG_NAME PLUGIN_CATALOG_DISPLAY_NAME PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE
     else
-        echo "Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
+        echo "INFO: Set DRY_RUN=0 to execute, or AUTO_UPDATE_CATALOG=1 to execute automatically."
     fi
     # set the plugin catalog header and section if needed
     local pluginsInCatalog='0'
@@ -532,12 +544,12 @@ replacePluginCatalog() {
             checkSumIncludePlugins=$(yq '.configurations[0].includePlugins' "$finalPluginCatalogYaml" | md5sum | cut -d' ' -f 1)
             checkSumFullExpected="${checkSumPluginsExpected}-${checkSumIncludePlugins}"
         else
-            echo "No plugins in catalog. No need to set it in bundle..."
+            echo "INFO: No plugins in catalog. No need to set it in bundle..."
             rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
             bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
         fi
     else
-        echo "No plugin catalog file. No need to set it in bundle..."
+        echo "INFO: No plugin catalog file. No need to set it in bundle..."
         rm -rf "${bundleDir}/catalog" "${finalPluginCatalogYaml}"
         bs="catalog" yq -i 'del(.[env(bs)])' "${targetBundleYaml}"
     fi
@@ -553,7 +565,7 @@ sanityCheckMinimumPlugins() {
     # sanity check - need...
     # - "cloudbees-casc-client" at a bare minimum
     # - "cloudbees-casc-items-controller" if the items
-    echo "Sanity checking minimum plugins..."
+    debug "Sanity checking minimum plugins..."
     local minimumPlugins="${MINIMUM_PLUGINS_CASC_CONTROLLER}"
     if [ "oc" == "$CI_TYPE" ]; then
         minimumPlugins="${MINIMUM_PLUGINS_CASC_OC}"
@@ -599,18 +611,18 @@ plugins() {
 }
 
 cleanupUnusedBundles() {
-    echo "Running clean up effective bundles..."
+    echo "INFO: Running clean up effective bundles..."
     # Effective
     local bundles=''
     bundles=$(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort)
     for bundleName in $bundles; do
-        echo "CLEANUP - Checking effective bundle '$bundleName'"
+        debug "CLEANUP - Checking effective bundle '$bundleName'"
         if [ ! -d "${RAW_DIR}/$bundleName" ]; then
-            echo "CLEANUP - Removing unused effective bundle '${bundleName}'"
+            debug "CLEANUP - Removing unused effective bundle '${bundleName}'"
             rm -rf "${EFFECTIVE_DIR}/${bundleName:?}"
         fi
     done
-    echo "Running clean up validation bundles if present..."
+    echo "INFO: Running clean up validation bundles if present..."
     if [ -d "$VALIDATIONS_DIR" ]; then
         if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
             # remove legacy validation bundles
@@ -623,9 +635,9 @@ cleanupUnusedBundles() {
             bundleName=$(basename "$d")
             [[ "$bundleName" != "${VALIDATIONS_TEMPLATE}" ]] || continue # # skip the VALIDATIONS_TEMPLATE
             local validationCheckSum="${bundleName//"${VALIDATIONS_BUNDLE_PREFIX}"/}"
-            echo "CLEANUP - Looking for validation checksum '$validationCheckSum'"
+            debug "CLEANUP - Looking for validation checksum '$validationCheckSum'"
             if ! grep -rq "$validationCheckSum" "${EFFECTIVE_DIR}"; then
-                echo "CLEANUP - Removing unused validation bundle '${bundleName}'"
+                debug "CLEANUP - Removing unused validation bundle '${bundleName}'"
                 rm -rf "${VALIDATIONS_DIR}/${bundleName:?}"
             else
                 # Exists so let's add all associated effective bundles as a head comment for
@@ -635,29 +647,32 @@ cleanupUnusedBundles() {
                     [[ -e "$f" ]] || break
                     local associatedBundleName=''
                     associatedBundleName=$(basename "$(dirname "$f")")
-                    echo "Adding associated bundle '$associatedBundleName'"
+                    debug "Adding associated bundle '${EFFECTIVE_DIR_RELATIVE}/$associatedBundleName'"
                     if [ -z "$headerStr" ]; then
-                        headerStr="$associatedBundleName"
+                        headerStr="${EFFECTIVE_DIR_RELATIVE}/$associatedBundleName"
                     else
-                        headerStr=$(printf '%s\n%s' "$headerStr" "$associatedBundleName")
+                        headerStr=$(printf '%s\n%s' "$headerStr" "${EFFECTIVE_DIR_RELATIVE}/${associatedBundleName}")
                     fi
                 done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
                 headerStr="$(sort <<< "${headerStr}")" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
             fi
         done
     fi
-    echo "Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
+    debug "INFO: Recreating the kustomisation.yaml if found at root of effective-bundles directory..."
     if [ -f "${KUSTOMIZATION_YAML}" ]; then
         toolCheck kustomize
         echo -n > "${KUSTOMIZATION_YAML}"
         (cd "$EFFECTIVE_DIR" && {
+            local configmapName=''
             local bundles=''
             bundles=$(find . -mindepth 1 -maxdepth 1 -type d -printf '%P\n' | sort)
             for d in $bundles; do
-                kustomize edit add configmap "${CI_VERSION_DASHES}-${d}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
+                configmapName="${CI_VERSION_DASHES}-${d}"
+                [ "true" == "${CONFIGMAP_INCLUDE_VERSION_IN_NAME}" ] || configmapName="${d}"
+                kustomize edit add configmap "${configmapName}" --behavior=create --disableNameSuffixHash --from-file="$d/*";
             done
         };)
-        echo "Recreated the kustomisation.yaml"
+        echo "INFO: Recreated the kustomisation.yaml"
     fi
 }
 
@@ -669,9 +684,9 @@ createValidation() {
     local validationBundle="${VALIDATIONS_BUNDLE_PREFIX}${checkSumFullExpected}"
     local validationDir="${VALIDATIONS_DIR}/${validationBundle}"
     if [ -d "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" ]; then
-        echo "VALIDATION BUNDLES - Checking bundle '$validationBundle'"
+        debug "VALIDATION BUNDLES - Checking bundle '$validationBundle'"
         if [ ! -d "${validationDir}" ] || [ "$DRY_RUN" -eq 0 ]; then
-            echo "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
+            debug "VALIDATION BUNDLES - Creating bundle '$validationBundle'"
             rm -rf "${validationDir}"
             cp -r "${VALIDATIONS_DIR}/${VALIDATIONS_TEMPLATE}" "${validationDir}"
             mv "${validationDir}/"*bundle.yaml "${validationDir}/bundle.yaml"
@@ -685,10 +700,10 @@ createValidation() {
                 bs="catalog" yq -i 'del(.[env(bs)])' "${validationDir}/bundle.yaml"
             fi
         else
-            echo "VALIDATION BUNDLES - Existing bundle '$validationBundle' found."
+            debug "VALIDATION BUNDLES - Existing bundle '$validationBundle' found."
         fi
     else
-        echo "VALIDATION BUNDLES - No validation template found so not creating for '$validationBundle'."
+        debug "VALIDATION BUNDLES - No validation template found so not creating for '$validationBundle'."
     fi
 }
 
@@ -711,9 +726,6 @@ DELETE_UNKNOWN_BUNDLES="${DELETE_UNKNOWN_BUNDLES:-"true"}"
 CONNECT_MAX_WAIT="${CONNECT_MAX_WAIT:-240}"
 # Used to allow for additional java opts to be added to the jenkins startup. e.g. -Djenkins.security.SystemReadPermission=true
 TEST_UTILS_STARTUP_JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS:-}"
-
-SUMMARY_TITLE="Analysis Summary:"
-[ -z "${BUNDLE_SUB_DIR:-}" ] || SUMMARY_TITLE="Analysis Summary for ${BUNDLE_SUB_DIR}:" # add sub dir to summary title
 
 # Set dry run for kubectl
 KUBERNETES_DRY_RUN=()
@@ -853,15 +865,16 @@ runValidationsChangedOnly()
     fi
 }
 
-## Takes 1 optional args (bundles) - if set run only those, otherwise run all validations (assumes the 'test-resources' directory has been created by the 'cascgen testResources')
+## Takes 2 optional args (bundles and validationBundlePrefix) - if set run only those, otherwise run all validations (assumes the 'test-resources' directory has been created by the 'cascgen testResources')
 runValidations()
 {
     local bundles="${1:-}"
-    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
+    local validationBundlePrefix="${2:-}"
+    for validationBundleTestResource in "${TEST_RESOURCES_DIR}/${validationBundlePrefix}"*; do
         local validationBundle='' bundlesFound=''
         validationBundle=$(basename "$validationBundleTestResource")
         for b in $bundles; do
-            local bZip="${validationBundleTestResource}/${b}.zip"
+            local bZip="${validationBundleTestResource}/${b//*\/}.zip"
             [ ! -f "${bZip}" ] || bundlesFound="${bundlesFound} ${bZip}"
         done
         if [ -z "${bundles}" ] || [ -n "$bundlesFound" ]; then
@@ -886,17 +899,17 @@ runValidations()
 
 changedSourcesAction() {
     local fromSha=$1 toSha=$2 headSha=$3
-    echo "CHANGED RESOURCES - Looking for changes between branch and base..."
-    if ! git diff --exit-code --name-only "${fromSha}..${toSha}"; then
-        echo "CHANGED RESOURCES - Found the changed resources above."
-        git diff --name-only "${fromSha}..${toSha}" > "${TEST_RESOURCES_CHANGED_FILES}"
+    echo "INFO: CHANGED RESOURCES - Looking for changes between branch and base..."
+    if ! git diff --exit-code --name-only "${fromSha}..${toSha}" > /dev/null; then
+        echo "INFO: CHANGED RESOURCES - Found the changed resources below."
+        git diff --name-only "${fromSha}..${toSha}" | tee "${TEST_RESOURCES_CHANGED_FILES}"
     fi
-    if grep -oE "effective-bundles/.*/" "${TEST_RESOURCES_CHANGED_FILES}"; then
-        grep -oE "effective-bundles/.*/" "${TEST_RESOURCES_CHANGED_FILES}" | cut -d/ -f2 | sort -u | xargs > "${TEST_RESOURCES_CHANGED_BUNDLES}"
+    if grep -qoE "${EFFECTIVE_DIR_RELATIVE}/.*/" "${TEST_RESOURCES_CHANGED_FILES}"; then
+        grep -oE "${EFFECTIVE_DIR_RELATIVE}/.*/" "${TEST_RESOURCES_CHANGED_FILES}" | grep -o '^.*[^/]' | sort -u > "${TEST_RESOURCES_CHANGED_BUNDLES}"
     fi
-    echo "CHANGED RESOURCES - Found the following changed bundles:"
+    echo "INFO: CHANGED RESOURCES - Found the following changed bundles:"
     cat "${TEST_RESOURCES_CHANGED_BUNDLES}"
-    echo "CHANGED RESOURCES - Checking to ensure branch is up to date..."
+    echo "INFO: CHANGED RESOURCES - Checking to ensure branch is up to date..."
     if [[ "$headSha" != "$toSha" ]]; then
         die "PR requires merge commit. Please rebase or otherwise update your branch. Not accepting."
     fi
@@ -910,8 +923,11 @@ changedSourcesAction() {
 getChangedSources() {
     local fromSha='' toSha='' headSha=''
     headSha=$(git rev-parse HEAD)
+    # we should test all regardless
+    if [ "true" == "${TEST_ALL_BUNDLES:-}" ]; then
+        addAllBundlesToChanged
     # we are on a PR
-    if [ -n "${CHANGE_TARGET:-}" ] && [ -n "${BRANCH_NAME:-}" ]; then
+    elif [ -n "${CHANGE_TARGET:-}" ] && [ -n "${BRANCH_NAME:-}" ]; then
         fromSha=$(git rev-parse "origin/${CHANGE_TARGET}")
         toSha=$(git rev-parse "origin/${BRANCH_NAME}")
         changedSourcesAction "$fromSha" "$toSha" "$headSha"
@@ -921,22 +937,32 @@ getChangedSources() {
             changedSourcesAction "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" "$GIT_COMMIT" "$headSha"
         else
             echo "Adding all bundles to the changed list since we are on a release branch for the first time."
-            find "$EFFECTIVE_DIR" -mindepth 1 -maxdepth 1 -type d | cut -d/ -f 3 | sort -u | xargs > "${TEST_RESOURCES_CHANGED_BUNDLES}"
+            addAllBundlesToChanged
         fi
     else
         die "We need CHANGE_TARGET and BRANCH_NAME, or a GIT_COMMIT and optionally GIT_PREVIOUS_SUCCESSFUL_COMMIT."
     fi
 }
 
+addAllBundlesToChanged() {
+    git ls-files | grep -oE "${EFFECTIVE_DIR_RELATIVE}/.*/" | grep -o '^.*[^/]' | sort -u > "${TEST_RESOURCES_CHANGED_BUNDLES}"
+}
+
 ## Prints a summary (assumes createTestResources has been run, and that some validation results in the form of <bundeName>.json next to <bundeName>.zip)
 getTestResultReport() {
+    local resultsOnlyWithBundleSubDirPrefix="${1:-}"
     local bundleDir=''
     local bundleName=''
+    local bundleNamePrefix=''
     local bundleStatus=''
     local bundleJson=''
     local bundleTxt='' # marker file to say we expect a resulting json
     local problemFound=''
     local msg=''
+
+    SUMMARY_TITLE="Analysis Summary:"
+    [ -z "${BUNDLE_SUB_DIR:-}" ] || SUMMARY_TITLE="Analysis Summary for ${BUNDLE_SUB_DIR}:" # add sub dir to summary title
+
     if [ "true" == "${SUMMARY_HTML}" ]; then
         msg=$(printf "<b>%s</b>" "${SUMMARY_TITLE}")
         SUMMARY_EOL="<br>"
@@ -945,11 +971,18 @@ getTestResultReport() {
         SUMMARY_EOL="\n"
     fi
 
+    # remove any previous summary
+    if [ "true" == "${resultsOnlyWithBundleSubDirPrefix}" ]; then
+        msg=''
+        if [ -n "${BUNDLE_SUB_DIR:-}" ]; then
+            bundleNamePrefix="${BUNDLE_SUB_DIR:-}/"
+        fi
+    fi
     echo "$msg: starting analysis. If you see this, there was a problem during the analysis." > "${TEST_RESOURCES_DIR}/test-summary.txt"
-    echo "Analysing bundles..."
+    echo "INFO: Analysing bundles..."
     while IFS= read -r -d '' bundleDir; do
         bundleName=$(basename "$bundleDir")
-        echo "Looking at bundle: ${bundleName}"
+        echo "INFO: Looking at bundle: ${bundleNamePrefix}${bundleName}"
         bundleTxt=$(find "${TEST_RESOURCES_DIR}" -type f -name "${bundleName}.txt")
         if [ -f "${bundleTxt}" ]; then
             # result json expected at least
@@ -968,16 +1001,16 @@ getTestResultReport() {
                 bundleStatus='NOK - VALIDATION JSON EXPECTED BUT MISSING'
             fi
         else
-            bundleStatus='N/A  - NOT TESTED IN THIS PR'
+            bundleStatus='N/A  - NOT TESTED'
         fi
         if [[ "${bundleStatus}" =~ NOK ]]; then
             problemFound='y'
         fi
-        msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "$bundleName" "$bundleStatus")
-        echo "$msg"
+        msg=$(printf "%s${SUMMARY_EOL}%s: %s" "$msg" "${bundleNamePrefix}${bundleName}" "$bundleStatus")
+        echo "INFO: ${bundleNamePrefix}${bundleName}" "$bundleStatus"
     done < <(find "${EFFECTIVE_DIR}" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
-    echo
-    echo "$msg"
+    debug ""
+    debug "$msg"
     printf "%s${SUMMARY_EOL}${SUMMARY_EOL}" "${msg}" > "${TEST_RESOURCES_DIR}/test-summary.txt"
     [ -z "$problemFound" ] || die "Problems found. Dying, alas 'twas so nice..."
 }
@@ -1018,10 +1051,12 @@ applyBundleConfigMaps()
 
 createTestResources() {
     mkdir -p "${TEST_RESOURCES_DIR}"
+    rm -r "${TEST_RESOURCES_DIR:?}/*" 2>/dev/null || true
     touch "${TEST_RESOURCES_CHANGED_FILES}" "${TEST_RESOURCES_CHANGED_BUNDLES}"
     for d in "${VALIDATIONS_DIR}/${VALIDATIONS_BUNDLE_PREFIX}"*; do
-        for bundle in $(yq '. | head_comment' "${d}/plugins.yaml"); do
+        for bundlePath in $(yq '. | head_comment' "${d}/plugins.yaml"); do
             local testValidationDir=''
+            local bundle="${bundlePath//*\//}"
             testValidationDir="${TEST_RESOURCES_DIR}/$(basename "$d")"
             mkdir -p "$testValidationDir"
             cd "${EFFECTIVE_DIR}/${bundle}"
@@ -1058,9 +1093,9 @@ runPrecommit() {
     local DIFFS=''
     DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
     if [ -z "$DIFFS" ]; then
-        echo "No changes found in raw-bundles"
-        echo "No changes found in effective-bundles"
-        echo "No changes found in validations"
+        echo "No changes found in ${RAW_DIR_NAME}"
+        echo "No changes found in ${EFFECTIVE_DIR_NAME}"
+        echo "No changes found in ${VALIDATIONS_DIR_NAME}"
         return 0
     else
         if [ "$DEBUG" -eq 1 ]; then
@@ -1158,6 +1193,95 @@ copyScriptsToAnotherDirectory() {
     done
 }
 
+# This function is used to get the root directories of the raw-bundles
+# passing a command will run that command on all the root directories
+getBundleRoots() {
+    local bundleRoots=''
+    bundleRoots=$(git ls-files "**/*.bundle.yaml" | cut -d/ -f1 | grep -vE "(${RAW_DIR_NAME}|${VALIDATIONS_DIR_NAME})" | sort -u | xargs || true)
+    bundleRoots="${bundleRoots:-.}"
+    if [ -n "${*}" ]; then
+        for root in $bundleRoots; do
+            echo "INFO: < < < ROOT COMMAND > > > Running command '${*}' in root '$root'"
+            BUNDLE_SUB_DIR="$root" $0 "${@}"
+        done
+    else
+        echo "${bundleRoots}"
+    fi
+}
+
+# To be run after createTestResources. Returns all known CI_VERSIONS
+findAllKnownCiVersions() {
+    local ciVersion=''
+    ciVersion=$(find "${GIT_ROOT}" -name .ci-versions -exec cat {} \; | sort -u)
+    if [ "$(wc -l <<< "$ciVersion")" -ne 1 ]; then
+        find "${GIT_ROOT}" -name .ci-versions -exec tail -vn 10 {} \;
+        die "Multiple or zero CI_VERSIONS in '.ci-versions' found. See above."
+    else
+        echo -n "$ciVersion"
+    fi
+}
+
+# To be run after createTestResources. Returns all changed effective bundles, or tests if a given bundle sub dir has changed
+getChangedEffectiveBundles() {
+    local bundleSubDirToCheck="${1:-"${BUNDLE_SUB_DIR:-}"}"
+    local changedEffectiveBundles=''
+    changedEffectiveBundles=$(find "${GIT_ROOT}" -type f -name .changed-effective-bundles -exec cat {} \;)
+    if [ -z "${bundleSubDirToCheck}" ]; then
+        echo "${changedEffectiveBundles}"
+    elif [ "." == "${bundleSubDirToCheck}" ]; then
+        grep -E "^${EFFECTIVE_DIR_NAME}/" <<< "${changedEffectiveBundles}" || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
+    else
+        grep -E "^${bundleSubDirToCheck}/" <<< "${changedEffectiveBundles}" || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
+    fi
+}
+
+# To be run after createTestResources. Returns all changed effective bundles by validation dir
+getValidationDirs() {
+    local bundleSubDirToCheck="${1:-"${BUNDLE_SUB_DIR:-}"}"
+    local validationDirs=''
+    validationDirs=$(find "${GIT_ROOT}" -type d -name "${VALIDATIONS_DIR_RELATIVE}" -print)
+    if [ -z "${bundleSubDirToCheck}" ]; then
+        for d in ${validationDirs}; do find "${d}" -mindepth 1 -maxdepth 1 -type d -name "${VALIDATIONS_BUNDLE_PREFIX_ORIG}*"; done
+    elif [ "." == "${bundleSubDirToCheck}" ]; then
+        validationDirs=$(grep -E "^${GIT_ROOT}/${VALIDATIONS_DIR_NAME}" <<< "${validationDirs}") || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
+        for d in ${validationDirs}; do find "${d}" -mindepth 1 -maxdepth 1 -type d -name "${VALIDATIONS_BUNDLE_PREFIX_ORIG}*"; done
+    else
+        validationDirs=$(grep -E "^${GIT_ROOT}/${bundleSubDirToCheck}/${VALIDATIONS_DIR_NAME}" <<< "${validationDirs}") || die "No changed effective bundles found in '${bundleSubDirToCheck}'"
+        for d in ${validationDirs}; do find "${d}" -mindepth 1 -maxdepth 1 -type d -name "${VALIDATIONS_BUNDLE_PREFIX_ORIG}*"; done
+    fi
+}
+
+
+# To be run after createTestResources. Returns all changed effective bundles by validation dir
+getChangedEffectiveBundlesForValidationDir() {
+    local validationBundleToTest="${1:-}"
+    local changedEffectiveBundles="${2:-}"
+    [ -n "$validationBundleToTest" ] || die "No validation bundle to test provided."
+    [ -d "$validationBundleToTest" ] || validationBundleToTest=$(find "${GIT_ROOT}" -type d -name "${validationBundleToTest}" -print | grep -v "${TEST_RESOURCES_DIR_NAME}")
+    [ -d "$validationBundleToTest" ] || die "No validation bundle found for '$validationBundleToTest'."
+    [ -n "$changedEffectiveBundles" ] || changedEffectiveBundles=$(getChangedEffectiveBundles)
+    [ -f "${validationBundleToTest}/plugins.yaml" ] || die "No plugins.yaml in the validation bundle."
+    [ -n "$changedEffectiveBundles" ] || changedEffectiveBundles=$(getChangedEffectiveBundles)
+    for d in $changedEffectiveBundles; do
+        if grep -qE "# ${d}$" "${validationBundleToTest}/plugins.yaml"; then
+            echo "$d"
+        fi
+    done
+}
+
+getValidationDirToChangedBundles() {
+    local includeEmpty="${INCLUDE_EMPTY:-}"
+    for d in $(getValidationDirs "$@"); do
+        local changedBundles=''
+        changedBundles=$(getChangedEffectiveBundlesForValidationDir "$d" | xargs || true)
+        if [ -n "$changedBundles" ]; then
+            echo "$(basename "$d"):$changedBundles"
+        elif [ "true" ==  "${includeEmpty}" ]; then
+            echo "$(basename "$d"):$changedBundles"
+        fi
+    done
+}
+
 # This function is used to check if the current tag is the latest version
 checkForLatestVersion() {
     local currentTag="${1-}"
@@ -1186,13 +1310,16 @@ unknownAction() {
     - vars: used to print out the current environment variables for a given (used to test BUNDLE_FILTER etc.)
     - versionCheck: used to check if given tag is the latest version
 
-    # CI utils - for use in the Jenkinsfile (assumes some environment variables are set)
+    # ci utils - for use in the Jenkinsfile (assumes some environment variables are set)
     - createTestResources: can be used in pipelines when validating bundles. creates bundle zips, list detected CI_VERSIONS, etc.
     - getChangedSources: can be used in pipelines when to get changed sources in PR or release branches
     - getTestResultReport: can be used in pipelines to get a summary of the test results
     - runValidations: can be used in pipelines to run validations for all bundles
     - runValidationsChangedOnly: can be used in pipelines to run validations for changed bundles only
     - applyBundleConfigMaps: can be used in pipelines to apply the bundle config maps
+
+    # misc
+    - roots: used to run the command on all bundle sub dirs. e.g. 'roots vars' will run 'vars' on all sub dirs
 
     NOTE: If your bundles are separated into groups through sub-directories, see the section on filtering and the BUNDLE_SUB_DIR environment variables in the repository.
 "
@@ -1246,8 +1373,11 @@ case $ACTION in
         processVars "${@}"
         ;;
     createTestResources)
-        processVars "${@}"
+        setDirs "${@}"
         createTestResources
+        ;;
+    ciVersion)
+        findAllKnownCiVersions
         ;;
     copyScripts)
         copyScriptsToAnotherDirectory "${@}"
@@ -1256,24 +1386,38 @@ case $ACTION in
         processVars "${@}"
         getChangedSources
         ;;
+    getChangedEffectiveBundles)
+        getChangedEffectiveBundles "${@}"
+        ;;
+    getChangedEffectiveBundlesForValidationDir)
+        getChangedEffectiveBundlesForValidationDir "${@}"
+        ;;
+    getValidationDirToChangedBundles)
+        getValidationDirToChangedBundles "${@}"
+        ;;
+    getValidationDirs)
+        getValidationDirs "${@}"
+        ;;
     getTestResultReport)
-        processVars "${@}"
-        getTestResultReport
+        processVars
+        getTestResultReport "${@}"
         ;;
     applyBundleConfigMaps)
         processVars "${@}"
         applyBundleConfigMaps
         ;;
     runValidationsChangedOnly)
-        processVars "${@}"
-        runValidationsChangedOnly
+        processVars
+        runValidationsChangedOnly "${@}"
         ;;
     runValidations)
-        processVars "${@}"
-        runValidations
+        processVars
+        runValidations "${@}"
+        ;;
+    roots)
+        getBundleRoots "$@"
         ;;
     *)
         unknownAction
         ;;
 esac
-debug "Done"
