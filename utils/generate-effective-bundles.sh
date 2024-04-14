@@ -1104,7 +1104,12 @@ runPrecommit() {
     PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
     $0 generate "${@}" > "$PRE_COMMIT_LOG" 2>&1
     local DIFFS=''
-    DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
+    if [ -n "${DIFFS_NO_EXCEPTIONS:-}" ]; then
+        DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
+    else
+        # removing M as we expect changes
+        DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}" | grep -vE "^M" || true)
+    fi
     if [ -z "$DIFFS" ]; then
         echo "No changes found in ${RAW_DIR_NAME}"
         echo "No changes found in ${EFFECTIVE_DIR_NAME}"
@@ -1376,7 +1381,7 @@ case $ACTION in
     verify)
         processVars "${@}"
         plugins
-        NO_DYING=1 runPrecommit
+        NO_DYING=1 DIFFS_NO_EXCEPTIONS=1 runPrecommit
         ;;
     autocorrect)
         processVars "${@}"
