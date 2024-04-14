@@ -650,11 +650,11 @@ cleanupUnusedBundles() {
                     [[ -e "$f" ]] || break
                     local associatedBundleName=''
                     associatedBundleName=$(basename "$(dirname "$f")")
-                    debug "Adding associated bundle '${EFFECTIVE_DIR_RELATIVE}/$associatedBundleName'"
+                    debug "Adding associated bundle '$associatedBundleName' from '${EFFECTIVE_DIR_RELATIVE}'"
                     if [ -z "$headerStr" ]; then
-                        headerStr="${EFFECTIVE_DIR_RELATIVE}/$associatedBundleName"
+                        headerStr="$associatedBundleName"
                     else
-                        headerStr=$(printf '%s\n%s' "$headerStr" "${EFFECTIVE_DIR_RELATIVE}/${associatedBundleName}")
+                        headerStr=$(printf '%s\n%s' "$headerStr" "${associatedBundleName}")
                     fi
                 done < <(grep -rl "${CHECKSUM_PLUGIN_FILES_KEY}=${validationCheckSum}" "${EFFECTIVE_DIR}")
                 headerStr="$(sort <<< "${headerStr}")" yq -i '. head_comment=strenv(headerStr)' "${d}/plugins.yaml"
