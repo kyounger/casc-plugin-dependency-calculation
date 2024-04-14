@@ -1127,12 +1127,15 @@ runPrecommit() {
 # - AUTOCORRECT_SAME_COMMIT: 1 to amend the current commit, 0 to create a new commit
 # - AUTOCORRECT_DRY_RUN: 1 to not push changes, 0 to push changes
 # - AUTOCORRECT_SKIP_BRANCH_CHECKOUT: 1 to skip the branch checkout, 0 to checkout the branch
-# - AUTOCORRECT_COMMIT_USER_NAME: the git user to use
-# - AUTOCORRECT_COMMIT_USER_EMAIL: the git user to use
-# - AUTOCORRECT_COMMIT_AUTHOR: the git user to use
+# - AUTOCORRECT_COMMIT_USER_NAME: (required) the git user to use
+# - AUTOCORRECT_COMMIT_USER_EMAIL: (required) the git user to use
+# - AUTOCORRECT_COMMIT_AUTHOR: (required) the git user to use
 # - AUTOCORRECT_COMMIT_MESSAGE: the commit message to use
 autocorrect() {
     AUTOCORRECT="${AUTOCORRECT:-0}"
+    [ "$AUTOCORRECT" -eq 1 ] || die "AUTOCORRECT is not set to 1. Changed files found above and no autocorrect defined..."
+
+    # Continue with the autocorrect
     AUTOCORRECT_SAME_COMMIT="${AUTOCORRECT_SAME_COMMIT:-0}"
     AUTOCORRECT_DRY_RUN="${AUTOCORRECT_DRY_RUN:-0}"
     AUTOCORRECT_SKIP_BRANCH_CHECKOUT="${AUTOCORRECT_SKIP_BRANCH_CHECKOUT:-0}"
@@ -1144,7 +1147,6 @@ autocorrect() {
     [ -n "$AUTOCORRECT_COMMIT_USER_NAME" ] || die "AUTOCORRECT_COMMIT_USER_NAME is not set."
     [ -n "$AUTOCORRECT_COMMIT_USER_EMAIL" ] || die "AUTOCORRECT_COMMIT_USER_EMAIL is not set."
     [ -n "$AUTOCORRECT_COMMIT_AUTHOR" ] || die "AUTOCORRECT_COMMIT_AUTHOR is not set."
-    [ -n "$AUTOCORRECT_COMMIT_MESSAGE" ] || die "AUTOCORRECT_COMMIT_MESSAGE is not set."
 
     # return if no differences found
     if [ -z "$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")" ]; then
@@ -1159,36 +1161,32 @@ autocorrect() {
         AUTOCORRECT_COMMIT_DRY_RUN=('--dry-run')
     fi
 
-    if [ "$AUTOCORRECT" -eq 1 ]; then
-        echo "Auto-correcting..."
+    echo "Auto-correcting..."
 
-        # if CHANGE_BRANCH is set, checkout that branch, die otherwise
-        if [ -n "${CHANGE_BRANCH:-}" ]; then
-            # ensure we have the branch in question
-            git config --add remote.origin.fetch "+refs/heads/$CHANGE_BRANCH:refs/remotes/origin/$CHANGE_BRANCH"
-            git config --get-all remote.origin.fetch
-            git fetch --depth=1 origin "$CHANGE_BRANCH"
-            git checkout "${CHANGE_BRANCH}"
-        elif [ "$AUTOCORRECT_SKIP_BRANCH_CHECKOUT" -ne 1 ]; then
-            die "We do not seem to be on a PR branch. Not autocorrecting on this branch."
-        fi
-
-        # add the files
-        git add "${EFFECTIVE_DIR_NAME}" "${RAW_DIR_NAME}" "${VALIDATIONS_DIR_NAME}"
-
-        # Commit and push changes back
-        git \
-            -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
-            -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
-            commit -m "$AUTOCORRECT_COMMIT_MESSAGE" \
-            --author="$AUTOCORRECT_COMMIT_AUTHOR" \
-            "${AUTOCORRECT_COMMIT_DRY_RUN[@]}" || echo "No files added to commit"
-
-        git push origin "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
-        echo "Changes pushed successfully ${AUTOCORRECT_COMMIT_DRY_RUN[*]}."
-    else
-        die "Changed files found above and no autocorrect defined!"
+    # if CHANGE_BRANCH is set, checkout that branch, die otherwise
+    if [ -n "${CHANGE_BRANCH:-}" ]; then
+        # ensure we have the branch in question
+        git config --add remote.origin.fetch "+refs/heads/$CHANGE_BRANCH:refs/remotes/origin/$CHANGE_BRANCH"
+        git config --get-all remote.origin.fetch
+        git fetch --depth=1 origin "$CHANGE_BRANCH"
+        git checkout "${CHANGE_BRANCH}"
+    elif [ "$AUTOCORRECT_SKIP_BRANCH_CHECKOUT" -ne 1 ]; then
+        die "We do not seem to be on a PR branch. Not autocorrecting on this branch."
     fi
+
+    # add the files
+    git add "${EFFECTIVE_DIR_NAME}" "${RAW_DIR_NAME}" "${VALIDATIONS_DIR_NAME}"
+
+    # Commit and push changes back
+    git \
+        -c user.name="$AUTOCORRECT_COMMIT_USER_NAME" \
+        -c user.email="$AUTOCORRECT_COMMIT_USER_EMAIL" \
+        commit -m "$AUTOCORRECT_COMMIT_MESSAGE" \
+        --author="$AUTOCORRECT_COMMIT_AUTHOR" \
+        "${AUTOCORRECT_COMMIT_DRY_RUN[@]}" || echo "No files added to commit"
+
+    git push origin "${AUTOCORRECT_COMMIT_DRY_RUN[@]}"
+    echo "Changes pushed successfully ${AUTOCORRECT_COMMIT_DRY_RUN[*]}."
 }
 
 
