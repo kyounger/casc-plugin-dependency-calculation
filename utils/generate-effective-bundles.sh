@@ -89,6 +89,15 @@ setDirs() {
 
     # optional kustomization.yaml creation
     KUSTOMIZATION_YAML="${EFFECTIVE_DIR}/kustomization.yaml"
+
+    # setting CI_IMAGE: if empty, get based on CI_TYPE, testing for key in array
+    if [ -z "${CI_IMAGE:-}" ]; then
+        if [ -n "${CI_TYPE_DEFAULT_IMAGES[$CI_TYPE]:-}" ]; then
+            CI_IMAGE="${CI_TYPE_DEFAULT_IMAGES[$CI_TYPE]}"
+        else
+            die "CI_TYPE '${CI_TYPE}' is not supported. Please use one of '${!CI_TYPE_DEFAULT_IMAGES[*]}' or set the CI_IMAGE variable."
+        fi
+    fi
 }
 
 toolCheck() {
@@ -140,14 +149,6 @@ CI_TYPE="${CI_TYPE:-mm}"
 declare -A CI_TYPE_DEFAULT_IMAGES
 CI_TYPE_DEFAULT_IMAGES[mm]="cloudbees/cloudbees-core-mm"
 CI_TYPE_DEFAULT_IMAGES[oc]="cloudbees/cloudbees-cloud-core-oc"
-# CI_IMAGE not empty, get based on CI_TYPE, testing for key in array
-if [ -z "${CI_IMAGE:-}" ]; then
-    if [ -n "${CI_TYPE_DEFAULT_IMAGES[$CI_TYPE]:-}" ]; then
-        CI_IMAGE="${CI_TYPE_DEFAULT_IMAGES[$CI_TYPE]}"
-    else
-        die "CI_TYPE '${CI_TYPE}' is not supported. Please use one of '${!CI_TYPE_DEFAULT_IMAGES[*]}' or set the CI_IMAGE variable."
-    fi
-fi
 
 # when running commands on all roots, fail fast if one fails
 ROOTS_COMMAND_FAIL_FAST="${ROOTS_COMMAND_FAIL_FAST:-1}"
@@ -948,7 +949,7 @@ getChangedSources() {
             echo "INFO: CHANGED RESOURCES - On a branch - looking for changes between last successful build and current commit..."
             changedSourcesAction "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" "$GIT_COMMIT" "$headSha"
         else
-            echo "INFO: CHANGED RESOURCES - On a branch - adding all bundles to the changed list since we are on a release branch for the first time."
+            echo "INFO: CHANGED RESOURCES - On a branch - adding all bundles to the changed list since TEST_CHANGES_SINCE_LAST_SUCCESSFUL not true."
             addAllBundlesToChanged
         fi
     else
