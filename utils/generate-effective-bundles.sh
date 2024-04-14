@@ -902,7 +902,8 @@ runValidations()
 
 changedSourcesAction() {
     local fromSha=$1 toSha=$2 headSha=$3
-    echo "INFO: CHANGED RESOURCES - Looking for changes between branch and base..."
+    echo "INFO: CHANGED RESOURCES - Looking for changes between ${fromSha} and ${toSha}"
+    echo "INFO: CHANGED RESOURCES - Running git diff --exit-code --name-only ${fromSha}..${toSha}"
     if ! git diff --exit-code --name-only "${fromSha}..${toSha}" > /dev/null; then
         echo "INFO: CHANGED RESOURCES - Found the changed resources below."
         git diff --name-only "${fromSha}..${toSha}" | tee "${TEST_RESOURCES_CHANGED_FILES}"
@@ -933,18 +934,21 @@ getChangedSources() {
     headSha=$(git rev-parse HEAD)
     # we should test all regardless
     if [ "true" == "${TEST_ALL_BUNDLES:-}" ]; then
+        echo "INFO: CHANGED RESOURCES - Adding all bundles to the changed list since TEST_ALL_BUNDLES is set to true."
         addAllBundlesToChanged
     # we are on a PR
     elif [ -n "${CHANGE_TARGET:-}" ] && [ -n "${BRANCH_NAME:-}" ]; then
+        echo "INFO: CHANGED RESOURCES - On a PR - looking for changes between branch and base..."
         fromSha=$(git rev-parse "origin/${CHANGE_TARGET}")
         toSha=$(git rev-parse "origin/${BRANCH_NAME}")
         changedSourcesAction "$fromSha" "$toSha" "$headSha"
     # we are on a release branch
     elif [ -n "${GIT_COMMIT:-}" ]; then
         if [ "true" == "${TEST_CHANGES_SINCE_LAST_SUCCESSFUL:-}" ] && [ -n "${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}" ]; then
+            echo "INFO: CHANGED RESOURCES - On a branch - looking for changes between last successful build and current commit..."
             changedSourcesAction "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" "$GIT_COMMIT" "$headSha"
         else
-            echo "Adding all bundles to the changed list since we are on a release branch for the first time."
+            echo "INFO: CHANGED RESOURCES - On a branch - adding all bundles to the changed list since we are on a release branch for the first time."
             addAllBundlesToChanged
         fi
     else
