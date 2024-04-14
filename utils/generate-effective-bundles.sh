@@ -918,11 +918,16 @@ changedSourcesAction() {
     fi
 }
 
-## Adds metadata above test-resources
-## Assumes the 'test-resources' directory has been created by the 'cascgen createTestResources'
-## Creates:
-## - .changed-files: all the from the PR
-## - .changed-effective-bundles: space separated list of changed bundles from the PR
+# Assumes the 'test-resources' directory has been created by the 'cascgen createTestResources'
+# This function retrieves the list of changed sources based on the current context.
+# It determines the range of commits to compare based on the environment variables.
+# - If the environment variable TEST_ALL_BUNDLES is set to "true", it adds all bundles to the changed list.
+# - If the environment variables CHANGE_TARGET and BRANCH_NAME are set, it compares the commits between.
+# - If the environment variables GIT_COMMIT and GIT_PREVIOUS_SUCCESSFUL_COMMIT are set, it compares the commits between.
+# - If none of the above conditions are met, it throws an error.
+# Creates:
+# - .changed-files: all the from the PR
+# - .changed-effective-bundles: space separated list of changed bundles from the PR
 getChangedSources() {
     local fromSha='' toSha='' headSha=''
     headSha=$(git rev-parse HEAD)
@@ -936,7 +941,7 @@ getChangedSources() {
         changedSourcesAction "$fromSha" "$toSha" "$headSha"
     # we are on a release branch
     elif [ -n "${GIT_COMMIT:-}" ]; then
-        if [ -n "${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}" ]; then
+        if [ "true" == "${TEST_CHANGES_SINCE_LAST_SUCCESSFUL:-}" ] && [ -n "${GIT_PREVIOUS_SUCCESSFUL_COMMIT:-}" ]; then
             changedSourcesAction "$GIT_PREVIOUS_SUCCESSFUL_COMMIT" "$GIT_COMMIT" "$headSha"
         else
             echo "Adding all bundles to the changed list since we are on a release branch for the first time."
