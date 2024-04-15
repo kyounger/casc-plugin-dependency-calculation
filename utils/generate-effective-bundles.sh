@@ -1153,8 +1153,16 @@ autocorrect() {
     [ -n "$AUTOCORRECT_COMMIT_USER_EMAIL" ] || die "AUTOCORRECT_COMMIT_USER_EMAIL is not set."
     [ -n "$AUTOCORRECT_COMMIT_AUTHOR" ] || die "AUTOCORRECT_COMMIT_AUTHOR is not set."
 
+    # find all directories named either effective-bundles or raw-bundles or validation-bundles
+    # and check if there are any differences
+    local gitTargets=()
+    for d in $(git ls-files --exclude-standard | grep -oE ".*(${EFFECTIVE_DIR_NAME}|${RAW_DIR_NAME}|${VALIDATIONS_DIR_NAME})\/" | sort -u); do
+        gitTargets+=("$d")
+    done
+
     # return if no differences found
-    if [ -z "$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")" ]; then
+    echo "Checking the following folders ${gitTargets[*]}"
+    if [ -z "$(git status --porcelain=v1 "${gitTargets[@]}")" ]; then
         echo "No changes found. Exiting..."
         return 0
     fi
@@ -1180,7 +1188,7 @@ autocorrect() {
     fi
 
     # add the files
-    git add "${EFFECTIVE_DIR_NAME}" "${RAW_DIR_NAME}" "${VALIDATIONS_DIR_NAME}"
+    git add "${gitTargets[@]}"
 
     # Commit and push changes back
     git \
@@ -1379,12 +1387,13 @@ case $ACTION in
         generate
         ;;
     verify)
+        export DRY_RUN=0
         processVars "${@}"
         plugins
         NO_DYING=1 DIFFS_NO_EXCEPTIONS=1 runPrecommit
         ;;
     autocorrect)
-        processVars "${@}"
+        setDirs "${@}"
         autocorrect
         ;;
     stopServer)
