@@ -224,7 +224,7 @@ determineCIVersion() {
         fi
         if [ -z "$CI_VERSION" ]; then
             debug "INFO: Testing CI_VERSION according to ${TEST_RESOURCES_CI_VERSIONS}..."
-            if [ -f "${TEST_RESOURCES_CI_VERSIONS}" ] && [ -n "$CHANGE_BRANCH" ]; then
+            if [ -f "${TEST_RESOURCES_CI_VERSIONS}" ] && [ -n "${CHANGE_BRANCH:-}" ]; then
                 # Used in PR use cases where the CI_VERSION cannot be determined otherwise
                 if [[ $(wc -l < "${TEST_RESOURCES_CI_VERSIONS}") -eq 1 ]]; then
                     local knownVersion=''
@@ -1107,8 +1107,8 @@ runPrecommit() {
     if [ -n "${DIFFS_NO_EXCEPTIONS:-}" ]; then
         DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
     else
-        # removing M as we can expect modified files in the cache or R renamed files
-        DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}" | grep -vE "^(M|R)" || true)
+        # we can expect M modified, R renamed, A added, or D deleted files in the cache
+        DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}" | grep -vE "^(M|R|A|D)" || true)
     fi
     if [ -z "$DIFFS" ]; then
         echo "No changes found in ${RAW_DIR_NAME}"
