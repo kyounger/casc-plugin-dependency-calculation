@@ -119,7 +119,7 @@ ver() {
 
 die() { echo "$*"  >&2; exit 1; }
 
-debug() { if [ "$DEBUG" -eq 1 ]; then echo "$*" >&2; fi; }
+debug() { if [ "${DEBUG:-}" -eq 1 ]; then echo "$*" >&2; fi; }
 
 # minimal tool versions
 MIN_VER_YQ="4.35.2"
