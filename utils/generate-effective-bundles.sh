@@ -326,7 +326,7 @@ listPluginYamlsIn() {
             pluginYamls+=("$entry")
         fi
     done
-    printf '%s\n' "${pluginYamls[@]}" | sort -d | tr '\n' ' ' | xargs --null
+    printf '%s\n' "${pluginYamls[@]}" | sort -d | tr '\n' '\0'
 }
 
 listPluginCatalogsIn() {
@@ -480,11 +480,12 @@ replacePluginCatalog() {
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
+    echo "INFO: Processing plugin catalog...$targetBundleYaml"
     while IFS= read -r -d '' f; do
         PLUGINS_LIST_CMD+=("$f")
         CASCDEPS_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$targetBundleYaml")
-
+    echo "INFO: Found plugins...${PLUGINS_LIST_CMD[*]}"
     # do we even have plugins files?
     if [ "yq --no-doc .plugins" == "${PLUGINS_LIST_CMD[*]}" ]; then
         debug "No plugins yaml files found."
@@ -617,8 +618,6 @@ plugins() {
             done
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
-        echo "Bundle yaml: $origBundleYaml"
-        listPluginYamlsIn "$origBundleYaml"
         while IFS= read -r -d '' f; do
             local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
             echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
