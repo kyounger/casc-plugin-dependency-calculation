@@ -508,7 +508,7 @@ replacePluginCatalog() {
     local checkSumEffectivePlugins=''
     local checkSumPluginsExpected=''
     local effectivePluginsList=''
-    effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
+    effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | grep -vE "^\[\]$" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
     checkSumEffectivePlugins=$(echo "$effectivePluginsList" | md5sum | cut -d' ' -f 1)
     checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
@@ -1132,7 +1132,11 @@ createTestResources() {
 
 runPrecommit() {
     PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
-    $0 generate "${@}" > "$PRE_COMMIT_LOG" 2>&1
+    if ! $0 generate "${@}" > "$PRE_COMMIT_LOG" 2>&1; then
+        echo "ERROR: Pre-commit 'generate' command itself failed. See log below."
+        cat "$PRE_COMMIT_LOG"
+        die "Pre-commit 'generate' command itself failed. END."
+    fi
     local DIFFS=''
     if [ -n "${DIFFS_NO_EXCEPTIONS:-}" ]; then
         DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
@@ -1258,11 +1262,15 @@ getBundleRoots() {
         for root in $bundleRoots; do
             echo "INFO: < < < ROOT COMMAND > > > Running command '${*}' in root '$root' (ROOTS_COMMAND_FAIL_FAST=${ROOTS_COMMAND_FAIL_FAST:-0})..."
             if ! BUNDLE_SUB_DIR="$root" $0 "${@}"; then
-                failed='y'
+                # add line and newline to failed
+                failed="${failed}Failed to run command '${*}' in root '$root'. "
+                echo "INFO: < < < ROOT COMMAND > > > Failed command '${*}' in root '$root'."
                 [ "${ROOTS_COMMAND_FAIL_FAST}" -eq 1 ] && break
+            else
+                echo "INFO: < < < ROOT COMMAND > > > Successfully ran command '${*}' in root '$root'."
             fi
         done
-        [ -z "$failed" ] || die "Failed to run command '${*}' in all root directories."
+        [ -z "$failed" ] || die "Failed to run command '${*}' in all root directories. ${failed}"
     else
         echo "${bundleRoots}"
     fi
@@ -1420,7 +1428,7 @@ case $ACTION in
         export DRY_RUN=0
         processVars "${@}"
         plugins
-        NO_DYING=1 DIFFS_NO_EXCEPTIONS=1 runPrecommit "${@}"
+        NO_DYING=1 DIFFS_NO_EXCEPTIONS=1 DEBUG=1 runPrecommit "${@}"
         ;;
     autocorrect)
         setDirs "${@}"
