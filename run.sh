@@ -6,6 +6,7 @@ set -euo pipefail
 ADD_TS="${ADD_TS:-0}"
 CHECK_CVES="${CHECK_CVES:-0}"
 PLUGIN_SOURCE="${PLUGIN_SOURCE:-all}"
+PLUGIN_SOURCE_STRICT="${PLUGIN_SOURCE_STRICT:-0}"
 INCLUDE_BOOTSTRAP="${INCLUDE_BOOTSTRAP:-0}"
 INCLUDE_OPTIONAL="${INCLUDE_OPTIONAL:-0}"
 DOWNLOAD="${DOWNLOAD:-0}"
@@ -480,10 +481,14 @@ copyOrExtractMetaInformation() {
   CATEGORY_SRC_ONLY_AUTO_TAG=0
   if [[ -z "${CATEGORY_SRC_ONLY_ARR[*]:-}" ]]; then
     if [ "${MINIMAL_PLUGIN_LIST}" -eq 1 ]; then
-      info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
-      CATEGORY_SRC_ONLY_AUTO_TAG=1
-      info "Setting PLUGIN_SOURCE=all since we don't have any and want to auto tag afterwards."
-      PLUGIN_SOURCE=all
+      if [ "${PLUGIN_SOURCE_STRICT}" -ne 1 ]; then
+        info "No 'src' comments found in the plugin list. Auto-generating 'src' comments on final list."
+        CATEGORY_SRC_ONLY_AUTO_TAG=1
+        info "Setting PLUGIN_SOURCE=all since we don't have any and want to auto tag afterwards."
+        PLUGIN_SOURCE=all
+      else
+        info "No 'src' comments found in the plugin list. Not considering any plugins since PLUGIN_SOURCE_STRICT=1."
+      fi
     else
       info "No 'src' comments found in the plugin list. Use '-s' to auto-generate comments on final list."
     fi

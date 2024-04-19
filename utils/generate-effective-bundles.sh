@@ -724,6 +724,8 @@ testForEffectivePlugin() {
 SUMMARY_HTML="${SUMMARY_HTML:-"false"}"
 # Whether to actually apply the config maps or just do a dry run
 CONFIGMAP_APPLY_DRY_RUN="${CONFIGMAP_APPLY_DRY_RUN:-"false"}"
+CONFIGMAP_APPLY_NAMESPACE="${CONFIGMAP_APPLY_NAMESPACE:-}"
+CONFIGMAP_APPLY_CONTEXT="${CONFIGMAP_APPLY_CONTEXT:-}"
 # Whether to actually delete unknown config maps or just add a warning to the log
 DELETE_UNKNOWN_BUNDLES="${DELETE_UNKNOWN_BUNDLES:-"true"}"
 # Give it 4 mins to connect to the jenkins server
@@ -735,6 +737,13 @@ TEST_UTILS_STARTUP_JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS:-}"
 KUBERNETES_DRY_RUN=()
 if [ "true" == "${CONFIGMAP_APPLY_DRY_RUN:-}" ]; then
     KUBERNETES_DRY_RUN=('--dry-run=client')
+fi
+KUBERNETES_EXEC_OPTS=()
+if [ -n "${CONFIGMAP_APPLY_NAMESPACE:-}" ]; then
+    KUBERNETES_EXEC_OPTS+=("--namespace=${CONFIGMAP_APPLY_NAMESPACE}")
+fi
+if [ -n "${CONFIGMAP_APPLY_CONTEXT:-}" ]; then
+    KUBERNETES_EXEC_OPTS+=("--context=${CONFIGMAP_APPLY_CONTEXT}")
 fi
 
 # Test jenkins server variables
@@ -1044,8 +1053,8 @@ applyBundleConfigMaps()
     labelSubDir="bundle-mgr/subdir:${BUNDLE_SUB_DIR:-"root"}"
     kustomize edit set label "$labelVersion" "$labelSha" "$labelSubDir"
     echo "Applying the kustomize configuration..."
-    kubectl kustomize | kubectl -n "$NAMESPACE" apply -f - "${KUBERNETES_DRY_RUN[@]}"
-    configMaps=$(kubectl -n "$NAMESPACE" get cm --selector "${labelVersion//\:/=},${labelSubDir//\:/=}" -o jsonpath="{.items[*].metadata.name}")
+    kubectl kustomize | kubectl "${KUBERNETES_EXEC_OPTS[@]}" apply -f - "${KUBERNETES_DRY_RUN[@]}"
+    configMaps=$(kubectl "${KUBERNETES_EXEC_OPTS[@]}" get cm --selector "${labelVersion//\:/=},${labelSubDir//\:/=}" -o jsonpath="{.items[*].metadata.name}")
     for cm in $configMaps; do
         if grep -qE "name: ${cm}$" kustomization.yaml; then
             echo "ConfigMap '$cm' in current list."
@@ -1053,7 +1062,7 @@ applyBundleConfigMaps()
             echo "ConfigMap '$cm' NOT in current list."
             if [ "true" == "${DELETE_UNKNOWN_BUNDLES}" ]; then
                 echo "ConfigMap '$cm' will be deleted."
-                kubectl -n "$NAMESPACE" delete cm "$cm" "${KUBERNETES_DRY_RUN[@]}"
+                kubectl "${KUBERNETES_EXEC_OPTS[@]}" delete cm "$cm" "${KUBERNETES_DRY_RUN[@]}"
             else
                 echo "ConfigMap '$cm' unknown but will be ignored (set DELETE_UNKNOWN_BUNDLES to true to delete)."
             fi
