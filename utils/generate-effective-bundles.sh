@@ -313,7 +313,20 @@ listPluginYamlsIn() {
     if [ ! -f "$1" ]; then
         return
     fi
-    yq -r '.plugins[]' "$1" | sort -z | xargs --null
+    local pluginYamls=()
+    for e in $(yq -r '.plugins[]' "$1"); do
+        # if directory, list all yaml files
+        local entry=''
+        entry="$(dirname "$1")/$e"
+        if [ -d "$entry" ]; then
+            while IFS= read -r -d '' f; do
+                pluginYamls+=("$f")
+            done < <(listFileXInY "$entry" "*.yaml")
+        else
+            pluginYamls+=("$entry")
+        fi
+    done
+    printf '%s\n' "${pluginYamls[@]}" | sort -d | tr '\n' ' ' | xargs --null
 }
 
 listPluginCatalogsIn() {
@@ -467,12 +480,10 @@ replacePluginCatalog() {
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
-    echo "Here $targetBundleYaml"
     while IFS= read -r -d '' f; do
         PLUGINS_LIST_CMD+=("$f")
         CASCDEPS_TOOL_CMD+=(-f "$f")
     done < <(listPluginYamlsIn "$targetBundleYaml")
-    echo "Here $targetBundleYaml"
 
     # do we even have plugins files?
     if [ "yq --no-doc .plugins" == "${PLUGINS_LIST_CMD[*]}" ]; then
@@ -594,6 +605,7 @@ plugins() {
     local bundleFilter="${BUNDLE_FILTER:-}"
     toolCheck yq md5sum
     while IFS= read -r -d '' bundleYaml; do
+        local origBundleYaml="${bundleYaml}"
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
         BUNDLE_PARENTS="$bundleDirName"
@@ -605,6 +617,8 @@ plugins() {
             done
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
+        echo "Bundle yaml: $origBundleYaml"
+        listPluginYamlsIn "$origBundleYaml"
         while IFS= read -r -d '' f; do
             local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
             echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
@@ -615,7 +629,7 @@ plugins() {
             else
                 echo "Set DRY_RUN=0 or AUTO_UPDATE_CATALOG=1 to execute."
             fi
-        done < <(listPluginYamlsIn "$bundleYaml")
+        done < <(listPluginYamlsIn "$origBundleYaml")
     done < <(listBundleYamlsIn "$RAW_DIR")
 }
 
