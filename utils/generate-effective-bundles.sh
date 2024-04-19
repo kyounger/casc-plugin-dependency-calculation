@@ -619,6 +619,9 @@ plugins() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         while IFS= read -r -d '' f; do
+            if [ ! -f "$f" ]; then
+                continue
+            fi
             local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
             echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
             if [ "$DRY_RUN" -eq 0 ] || [ "$AUTO_UPDATE_CATALOG" -eq 1 ]; then
