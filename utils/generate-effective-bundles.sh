@@ -1433,7 +1433,7 @@ case $ACTION in
         export DRY_RUN=0
         processVars "${@}"
         plugins
-        NO_DYING=1 DIFFS_NO_EXCEPTIONS=1 DEBUG=1 runPrecommit "${@}"
+        NO_DYING=1 DIFFS_NO_EXCEPTIONS=1 runPrecommit "${@}"
         ;;
     autocorrect)
         setDirs "${@}"
