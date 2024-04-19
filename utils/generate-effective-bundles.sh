@@ -413,6 +413,11 @@ generate() {
                             targetFileName=$(echo -n "${bundleSection}.${i}.${parent}.${cascBundleEntry}/$fileName" | tr '/' '.')
                             debug "  -> $targetFileName"
                             if [ -s "${srcFile}" ]; then
+                                # if plugins sections and plugins.yaml is empty, skip
+                                if [[ "plugins" == "${bundleSection}" ]] && [[ $(yq -e '.plugins|length' "${srcFile}") -eq 0 ]]; then
+                                    echo "WARNING: Empty plugins list - ignoring... ${srcFile}"
+                                    continue
+                                fi
                                 "${COPY_CMD[@]}" "${srcFile}" "${targetDir}/${targetFileName}"
                                 bs=$bundleSection f=$targetFileName yq -i '.[env(bs)] += env(f)' "${targetBundleYaml}"
                             else
@@ -1364,7 +1369,7 @@ checkForLatestVersion() {
 }
 
 unknownAction() {
-        die "Unknown action '$ACTION' (permitted actions below)
+    die "Unknown action '$ACTION' (permitted actions below)
 
     # management
     - plugins: used to create the minimal set of plugins for your bundles
