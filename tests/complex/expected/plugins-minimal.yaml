@@ -55,6 +55,7 @@ plugins:
   - id: hashicorp-vault-plugin # 3rd src
   - id: ivy # 3rd src
   - id: jacoco # cap src
+  - id: jersey2-api # 3rd dep
   - id: job-dsl # 3rd src
   - id: maven-plugin # cap dep
   - id: parameterized-scheduler # 3rd src

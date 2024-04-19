@@ -310,7 +310,23 @@ listBundleYamlsIn() {
 }
 
 listPluginYamlsIn() {
-    listFileXInY "$1" "*plugins*.yaml"
+    if [ ! -f "$1" ]; then
+        return
+    fi
+    local pluginYamls=()
+    for e in $(yq -r '.plugins[]' "$1"); do
+        # if directory, list all yaml files
+        local entry=''
+        entry="$(dirname "$1")/$e"
+        if [ -d "$entry" ]; then
+            while IFS= read -r -d '' f; do
+                pluginYamls+=("$f")
+            done < <(listFileXInY "$entry" "*.yaml")
+        else
+            pluginYamls+=("$entry")
+        fi
+    done
+    printf '%s\n' "${pluginYamls[@]}" | sort -d | tr '\n' '\0'
 }
 
 listPluginCatalogsIn() {
@@ -397,6 +413,11 @@ generate() {
                             targetFileName=$(echo -n "${bundleSection}.${i}.${parent}.${cascBundleEntry}/$fileName" | tr '/' '.')
                             debug "  -> $targetFileName"
                             if [ -s "${srcFile}" ]; then
+                                # if plugins sections and plugins.yaml is empty, skip
+                                if [[ "plugins" == "${bundleSection}" ]] && [[ $(yq -e '.plugins|length' "${srcFile}") -eq 0 ]]; then
+                                    echo "WARNING: Empty plugins list - ignoring... ${srcFile}"
+                                    continue
+                                fi
                                 "${COPY_CMD[@]}" "${srcFile}" "${targetDir}/${targetFileName}"
                                 bs=$bundleSection f=$targetFileName yq -i '.[env(bs)] += env(f)' "${targetBundleYaml}"
                             else
@@ -464,11 +485,12 @@ replacePluginCatalog() {
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
+    echo "INFO: Processing plugin catalog...$targetBundleYaml"
     while IFS= read -r -d '' f; do
         PLUGINS_LIST_CMD+=("$f")
         CASCDEPS_TOOL_CMD+=(-f "$f")
-    done < <(listPluginYamlsIn "$bundleDir")
-
+    done < <(listPluginYamlsIn "$targetBundleYaml")
+    echo "INFO: Found plugins...${PLUGINS_LIST_CMD[*]}"
     # do we even have plugins files?
     if [ "yq --no-doc .plugins" == "${PLUGINS_LIST_CMD[*]}" ]; then
         debug "No plugins yaml files found."
@@ -491,7 +513,7 @@ replacePluginCatalog() {
     local checkSumEffectivePlugins=''
     local checkSumPluginsExpected=''
     local effectivePluginsList=''
-    effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
+    effectivePluginsList=$("${PLUGINS_LIST_CMD[@]}" | grep -vE "^\[\]$" | yq '. |= (reverse | unique_by(.id) | sort_by(.id))' - --header-preprocess=false)
     checkSumEffectivePlugins=$(echo "$effectivePluginsList" | md5sum | cut -d' ' -f 1)
     checkSumPluginsExpected="${CI_VERSION_DASHES}-${checkSumEffectivePlugins}"
     # check for AUTO_UPDATE_CATALOG
@@ -589,6 +611,7 @@ plugins() {
     local bundleFilter="${BUNDLE_FILTER:-}"
     toolCheck yq md5sum
     while IFS= read -r -d '' bundleYaml; do
+        local origBundleYaml="${bundleYaml}"
         bundleDir=$(dirname "$bundleYaml")
         bundleDirName=$(basename "$bundleDir")
         BUNDLE_PARENTS="$bundleDirName"
@@ -601,6 +624,9 @@ plugins() {
             if [ "$skipBundle" -eq 1 ]; then continue; fi
         fi
         while IFS= read -r -d '' f; do
+            if [ ! -f "$f" ]; then
+                continue
+            fi
             local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -v "$CI_VERSION" -sAf "$f" -G "$f")
             echo "Running... ${CASCDEPS_TOOL_CMD[*]}"
             if [ "$DRY_RUN" -eq 0 ] || [ "$AUTO_UPDATE_CATALOG" -eq 1 ]; then
@@ -610,7 +636,7 @@ plugins() {
             else
                 echo "Set DRY_RUN=0 or AUTO_UPDATE_CATALOG=1 to execute."
             fi
-        done < <(listPluginYamlsIn "$bundleDir")
+        done < <(listPluginYamlsIn "$origBundleYaml")
     done < <(listBundleYamlsIn "$RAW_DIR")
 }
 
@@ -724,6 +750,8 @@ testForEffectivePlugin() {
 SUMMARY_HTML="${SUMMARY_HTML:-"false"}"
 # Whether to actually apply the config maps or just do a dry run
 CONFIGMAP_APPLY_DRY_RUN="${CONFIGMAP_APPLY_DRY_RUN:-"false"}"
+CONFIGMAP_APPLY_NAMESPACE="${CONFIGMAP_APPLY_NAMESPACE:-}"
+CONFIGMAP_APPLY_CONTEXT="${CONFIGMAP_APPLY_CONTEXT:-}"
 # Whether to actually delete unknown config maps or just add a warning to the log
 DELETE_UNKNOWN_BUNDLES="${DELETE_UNKNOWN_BUNDLES:-"true"}"
 # Give it 4 mins to connect to the jenkins server
@@ -735,6 +763,13 @@ TEST_UTILS_STARTUP_JAVA_OPTS="${TEST_UTILS_STARTUP_JAVA_OPTS:-}"
 KUBERNETES_DRY_RUN=()
 if [ "true" == "${CONFIGMAP_APPLY_DRY_RUN:-}" ]; then
     KUBERNETES_DRY_RUN=('--dry-run=client')
+fi
+KUBERNETES_EXEC_OPTS=()
+if [ -n "${CONFIGMAP_APPLY_NAMESPACE:-}" ]; then
+    KUBERNETES_EXEC_OPTS+=("--namespace=${CONFIGMAP_APPLY_NAMESPACE}")
+fi
+if [ -n "${CONFIGMAP_APPLY_CONTEXT:-}" ]; then
+    KUBERNETES_EXEC_OPTS+=("--context=${CONFIGMAP_APPLY_CONTEXT}")
 fi
 
 # Test jenkins server variables
@@ -1044,8 +1079,8 @@ applyBundleConfigMaps()
     labelSubDir="bundle-mgr/subdir:${BUNDLE_SUB_DIR:-"root"}"
     kustomize edit set label "$labelVersion" "$labelSha" "$labelSubDir"
     echo "Applying the kustomize configuration..."
-    kubectl kustomize | kubectl -n "$NAMESPACE" apply -f - "${KUBERNETES_DRY_RUN[@]}"
-    configMaps=$(kubectl -n "$NAMESPACE" get cm --selector "${labelVersion//\:/=},${labelSubDir//\:/=}" -o jsonpath="{.items[*].metadata.name}")
+    kubectl kustomize | kubectl "${KUBERNETES_EXEC_OPTS[@]}" apply -f - "${KUBERNETES_DRY_RUN[@]}"
+    configMaps=$(kubectl "${KUBERNETES_EXEC_OPTS[@]}" get cm --selector "${labelVersion//\:/=},${labelSubDir//\:/=}" -o jsonpath="{.items[*].metadata.name}")
     for cm in $configMaps; do
         if grep -qE "name: ${cm}$" kustomization.yaml; then
             echo "ConfigMap '$cm' in current list."
@@ -1053,7 +1088,7 @@ applyBundleConfigMaps()
             echo "ConfigMap '$cm' NOT in current list."
             if [ "true" == "${DELETE_UNKNOWN_BUNDLES}" ]; then
                 echo "ConfigMap '$cm' will be deleted."
-                kubectl -n "$NAMESPACE" delete cm "$cm" "${KUBERNETES_DRY_RUN[@]}"
+                kubectl "${KUBERNETES_EXEC_OPTS[@]}" delete cm "$cm" "${KUBERNETES_DRY_RUN[@]}"
             else
                 echo "ConfigMap '$cm' unknown but will be ignored (set DELETE_UNKNOWN_BUNDLES to true to delete)."
             fi
@@ -1102,7 +1137,11 @@ createTestResources() {
 
 runPrecommit() {
     PRE_COMMIT_LOG=/tmp/pre-commit.check-effective-bundles.log
-    $0 generate "${@}" > "$PRE_COMMIT_LOG" 2>&1
+    if ! $0 generate "${@}" > "$PRE_COMMIT_LOG" 2>&1; then
+        echo "ERROR: Pre-commit 'generate' command itself failed. See log below."
+        cat "$PRE_COMMIT_LOG"
+        die "Pre-commit 'generate' command itself failed. END."
+    fi
     local DIFFS=''
     if [ -n "${DIFFS_NO_EXCEPTIONS:-}" ]; then
         DIFFS=$(git status --porcelain=v1 "${EFFECTIVE_DIR}" "${RAW_DIR}" "${VALIDATIONS_DIR}")
@@ -1228,11 +1267,15 @@ getBundleRoots() {
         for root in $bundleRoots; do
             echo "INFO: < < < ROOT COMMAND > > > Running command '${*}' in root '$root' (ROOTS_COMMAND_FAIL_FAST=${ROOTS_COMMAND_FAIL_FAST:-0})..."
             if ! BUNDLE_SUB_DIR="$root" $0 "${@}"; then
-                failed='y'
+                # add line and newline to failed
+                failed="${failed}Failed to run command '${*}' in root '$root'. "
+                echo "INFO: < < < ROOT COMMAND > > > Failed command '${*}' in root '$root'."
                 [ "${ROOTS_COMMAND_FAIL_FAST}" -eq 1 ] && break
+            else
+                echo "INFO: < < < ROOT COMMAND > > > Successfully ran command '${*}' in root '$root'."
             fi
         done
-        [ -z "$failed" ] || die "Failed to run command '${*}' in all root directories."
+        [ -z "$failed" ] || die "Failed to run command '${*}' in all root directories. ${failed}"
     else
         echo "${bundleRoots}"
     fi
@@ -1326,7 +1369,7 @@ checkForLatestVersion() {
 }
 
 unknownAction() {
-        die "Unknown action '$ACTION' (permitted actions below)
+    die "Unknown action '$ACTION' (permitted actions below)
 
     # management
     - plugins: used to create the minimal set of plugins for your bundles
