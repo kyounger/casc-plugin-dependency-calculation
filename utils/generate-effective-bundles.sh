@@ -310,7 +310,10 @@ listBundleYamlsIn() {
 }
 
 listPluginYamlsIn() {
-    listFileXInY "$1" "*plugins*.yaml"
+    if [ ! -f "$1" ]; then
+        return
+    fi
+    yq -r '.plugins[]' "$1" | sort -z | xargs --null
 }
 
 listPluginCatalogsIn() {
@@ -464,10 +467,12 @@ replacePluginCatalog() {
     local finalPluginCatalogYaml="${bundleDir}/${pluginCatalogYamlFile}"
     local CASCDEPS_TOOL_CMD=("$CASCDEPS_TOOL" -N -M -v "$ciVersion")
     local PLUGINS_LIST_CMD=("yq" "--no-doc" ".plugins")
+    echo "Here $targetBundleYaml"
     while IFS= read -r -d '' f; do
         PLUGINS_LIST_CMD+=("$f")
         CASCDEPS_TOOL_CMD+=(-f "$f")
-    done < <(listPluginYamlsIn "$bundleDir")
+    done < <(listPluginYamlsIn "$targetBundleYaml")
+    echo "Here $targetBundleYaml"
 
     # do we even have plugins files?
     if [ "yq --no-doc .plugins" == "${PLUGINS_LIST_CMD[*]}" ]; then
@@ -610,7 +615,7 @@ plugins() {
             else
                 echo "Set DRY_RUN=0 or AUTO_UPDATE_CATALOG=1 to execute."
             fi
-        done < <(listPluginYamlsIn "$bundleDir")
+        done < <(listPluginYamlsIn "$bundleYaml")
     done < <(listBundleYamlsIn "$RAW_DIR")
 }
 
