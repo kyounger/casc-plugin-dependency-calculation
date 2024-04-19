@@ -72,6 +72,7 @@ plugins:
   - id: htmlpublisher # cap dep
   - id: ivy # 3rd src
   - id: jacoco # cap src
+  - id: jersey2-api # 3rd dep
   - id: job-dsl # 3rd src
   - id: junit # cap dep
   - id: mailer # cap bst
