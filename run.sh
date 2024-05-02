@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Setting LC_ALL=C to avoid sorting issues with yq and locales
+export LC_ALL=C
+
 # Initialize our own variables:
 ADD_TS="${ADD_TS:-0}"
 CHECK_CVES="${CHECK_CVES:-0}"
@@ -47,6 +50,7 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
 
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file (can be set multiple times)
+                    If '-' is used, the content will be read from stdin
     -M          When processing multiple plugins files, DEDUPLICATE the list first
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -t          The instance type (oc, oc-traditional, cm, mm)
@@ -129,6 +133,12 @@ while getopts AiIhHv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
             PLUGIN_CATALOG_OFFLINE_EXEC_HOOK=$OPTARG
             ;;
         f)
+            # if $OPTARG is a '-' then create a temporary file and paste the value of stdin into it
+            if [ "$OPTARG" = "-" ]; then
+                echo "INFO: Reading plugins.yaml from stdin..."
+                OPTARG=$(mktemp)
+                cat > "$OPTARG"
+            fi
             PLUGIN_YAML_PATHS_FILES["$PLUGIN_YAML_PATHS_IDX"]=$OPTARG
             PLUGIN_YAML_PATHS_IDX=$((PLUGIN_YAML_PATHS_IDX + 1))
             ;;
@@ -327,6 +337,7 @@ setScriptVars() {
   fi
   # sanity checks
   [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
+  [ "true" == "$(yq '.| has("plugins")' "${PLUGIN_YAML_PATH}")" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' does not contain a plugins section."
 
   PLUGIN_CATALOG_PATH=$(dirname "$PLUGIN_YAML_PATH")/plugin-catalog.yaml
 }
@@ -1407,6 +1418,7 @@ checkCIVersions() {
   fi
   if [ -n "${CI_VERSION:-}" ]; then
     info "CI_VERSION set to '$CI_VERSION'."
+    info "CI_TYPE set to '$CI_TYPE'."
   else
     die "CI_VERSION was empty."
   fi
