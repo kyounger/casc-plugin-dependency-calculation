@@ -31,17 +31,23 @@ while IFS=: read -r plugin version; do
     plugin_versions["$plugin"]="$version"
 done <<< "$versions"
 
+# Need to remove the .v from the version to compare since sort -V takes the .v* as a string
+normalize_version() {
+    sed -E "s/([0-9])\.v/\1-v/g" <<< "$1"
+}
 # Compare versions
 output_all=""
 while IFS=: read -r plugin dependency dep_version; do
     if [[ -n "${plugin_versions[$dependency]:-}" ]]; then
-        installed_version="${plugin_versions[$dependency]}"
-        # echo "Checking $plugin -> $dependency ($installed_version vs $dep_version)"
-        if [[ "$(printf '%s\n%s' "$installed_version" "$dep_version" | sort -V | tail -n1)" != "$installed_version" ]]; then
-            output="Dependency: $dependency (required version $installed_version != $dep_version in the update center) - from plugin $plugin"
+        provided_version="${plugin_versions[$dependency]}"
+        # echo "Checking $plugin -> $dependency ($provided_version vs $dep_version)"
+        provided_version_normalized=$(normalize_version "$provided_version")
+        dep_version_normalized=$(normalize_version "$dep_version")
+        if [[ "$(printf '%s\n%s' "${provided_version_normalized}" "${dep_version_normalized}" | sort -V | tail -n1)" != "${provided_version_normalized}" ]]; then
+            output="Dependency: $dependency (offered version $provided_version < $dep_version from the dependency) - from plugin $plugin"
             [ -z "$output_all" ] && output_all="$output" || output_all="$output_all\n$output"
         fi
     fi
 done <<< "$dependencies"
 # sort the output
-[ -z "$output_all" ] || { echo -e "$output_all" | sort -u; }
+[ -z "$output_all" ] || echo -e "$output_all" | sort -u
