@@ -51,6 +51,8 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -h          display this help and exit
     -f FILE     path to the plugins.yaml file (can be set multiple times)
                     If '-' is used, the content will be read from stdin
+    -p PLUGINS  Comma separated list of plugins to process (a temporary plugins.yaml file will be created)
+                    e.g. -p "git,workflow-aggregator,cloudbees-folder"
     -M          When processing multiple plugins files, DEDUPLICATE the list first
     -v          The version of CloudBees CI (e.g. 2.263.4.2)
     -t          The instance type (oc, oc-traditional, cm, mm)
@@ -99,16 +101,11 @@ Environment variables (non-exclusive list):
 EOF
 }
 
-if [[ ${#} -eq 0 ]]; then
-    show_help
-    exit 0
-fi
-
 OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts AiIhHv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
+while getopts AiIhHv:xf:F:g:G:c:C:m:MNRp:sSt:VdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -175,6 +172,9 @@ while getopts AiIhHv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
         N)
             SKIP_PROCESS_DEPENDENCIES_CATALOG_ONLY=1
             ;;
+        p)
+            PLUGINS_STR=$OPTARG
+            ;;
         R)
             REFRESH_UC=1
             ;;
@@ -194,6 +194,13 @@ while getopts AiIhHv:xf:F:g:G:c:C:m:MNRsSt:VdD:e: opt; do
     esac
 done
 shift "$((OPTIND-1))"   # Discard the options and sentinel --
+
+# CHECK_CVES is set to 1 by default if the environment variable is set
+CHECK_CVES_STR=""
+if [ "${CHECK_CVES}" -eq 1 ]; then
+  CHECK_CVES_STR="  cve - are there open security issues?
+"
+fi
 
 # debug
 debug() {
@@ -322,18 +329,34 @@ setScriptVars() {
 
   # check for multiple source files
   if [ ${#PLUGIN_YAML_PATHS_FILES[@]} -eq 0 ]; then
-    info "Using the default file '$PLUGIN_YAML_PATH'."
-  elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -eq 1 ]; then
-    PLUGIN_YAML_PATH="${PLUGIN_YAML_PATHS_FILES[0]}"
-    info "Using the single file '$PLUGIN_YAML_PATH'."
-  elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -gt 1 ]; then
-    PLUGIN_YAML_PATH=$(mktemp)
-    info "Multiple source files passed. Creating temporary plugins.yaml file '$PLUGIN_YAML_PATH'."
-    # looping through and merging plugins files.
-    for currentPluginYamlPath in "${PLUGIN_YAML_PATHS_FILES[@]}"; do
-      # shellcheck disable=SC2016
-      yq -i eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}"
-    done
+    if [ -n "${PLUGINS_STR:-}" ]; then
+      # if we have a list of plugins, create a temporary plugins.yaml file
+      PLUGIN_YAML_PATH=$(mktemp)
+      info "Creating temporary plugins.yaml file '$PLUGIN_YAML_PATH' with plugins '${PLUGINS_STR}'"
+      # create the yaml file with the plugins
+      echo "plugins:" > "${PLUGIN_YAML_PATH}"
+      for plugin in $(echo "${PLUGINS_STR}" | tr ',' ' '); do
+        echo "- id: ${plugin}" >> "${PLUGIN_YAML_PATH}"
+      done
+    else
+      info "Using the default file '$PLUGIN_YAML_PATH'."
+    fi
+  else
+    # non-zero list - sanity check if we have a plugins string
+    [ -z "${PLUGINS_STR:-}" ] || die "You cannot use '-p' and '-f' at the same time. Please use one or the other."
+    # process the files
+    if [ ${#PLUGIN_YAML_PATHS_FILES[@]} -eq 1 ]; then
+      PLUGIN_YAML_PATH="${PLUGIN_YAML_PATHS_FILES[0]}"
+      info "Using the single file '$PLUGIN_YAML_PATH'."
+    elif [ ${#PLUGIN_YAML_PATHS_FILES[@]} -gt 1 ]; then
+      PLUGIN_YAML_PATH=$(mktemp)
+      info "Multiple source files passed. Creating temporary plugins.yaml file '$PLUGIN_YAML_PATH'."
+      # looping through and merging plugins files.
+      for currentPluginYamlPath in "${PLUGIN_YAML_PATHS_FILES[@]}"; do
+        # shellcheck disable=SC2016
+        yq -i eval-all '. as $item ireduce ({}; . *+ $item )' "$PLUGIN_YAML_PATH" "${currentPluginYamlPath}"
+      done
+    fi
   fi
   # sanity checks
   [ -f "${PLUGIN_YAML_PATH}" ] || die "The plugins yaml '${PLUGIN_YAML_PATH}' is not a file."
@@ -666,15 +689,18 @@ cat << EOF
   Dependency tree of processed plugins:
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
 
-  For more details on the dependencies of a plugin, run:
-    # all dependencies
-    p=<PLUGIN_TO_CHECK>; grep -E ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
-    # unique parents only
-    p=<PLUGIN_TO_CHECK>; grep -oE ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}" | sort -u
+  Utility functions to check dependencies of plugins (copy and paste into your shell):
+    pDeps() { local p=\$1; grep -E "(.* -> )*\$p(\$| )" "target/2.504.3.28227/mm/generated/deps-processed-tree-single.txt"; }
+    pDepsP() { local p=\$1; grep -oE "(.* -> )\$p(\$| )" "target/2.504.3.28227/mm/generated/deps-processed-tree-single.txt" | sort -u; }
+    pDeps3rd() { p="(\$(echo -n "\$(yq '.configurations[0].includePlugins|keys|.[]' "target/2.504.3.28227/mm/plugin-catalog.yaml")" | tr '\n' '|'))"; grep -oE "(.* -> )*\$p(\$| )" "target/2.504.3.28227/mm/generated/deps-processed-tree-single.txt" | sort -u; }
 
-  For a full report on the dependencies of all 3rd party plugins, run:
-    p="(\$(echo -n "\$(yq '.configurations[0].includePlugins|keys|.[]' "${TARGET_PLUGIN_CATALOG#"${CURRENT_DIR}"/}")" | tr '\n' '|'))"; \\
-      grep -oE ".* -> \$p($| )" "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}" | sort -u
+  For more details on the dependencies of a plugin, run the utilities like this:
+    # all dependencies
+    - pDeps <PLUGIN_TO_CHECK>
+    # unique parents only
+    - pDepsP <PLUGIN_TO_CHECK>
+    # full report on the dependencies of all 3rd party plugins and their 3rd party dependencies
+    - pDeps3rd
 
   List of all plugins to be expected on controller after startup:
     cat "${TARGET_PLUGIN_DEPS_ALL_EXPECTED_POST_STARTUP#"${CURRENT_DIR}"/}"
@@ -1132,19 +1158,18 @@ createPluginCatalogAndPluginsYaml() {
   DEFAULT_HEADER="This file is automatically generated - please do not edit manually.
 
 Annotations (given as a comment above the plugin in question):
- ${ANNOTATION_CUSTOM_VERSION_PREFIX}...    - set a custom version (e.g. 1.0)
- ${ANNOTATION_CUSTOM_URL_PREFIX}...        - sets a custom url (e.g. https://artifacts.acme.test/my-plugin/1.0/my-plugin.jpi)
- ${ANNOTATION_CUSTOM_REQUIRES_PREFIX}...   - spaced separated list of required dependencies (e.g. badge envinject)
+  ${ANNOTATION_CUSTOM_VERSION_PREFIX}...    - set a custom version (e.g. 1.0)
+  ${ANNOTATION_CUSTOM_URL_PREFIX}...        - sets a custom url (e.g. https://artifacts.acme.test/my-plugin/1.0/my-plugin.jpi)
+  ${ANNOTATION_CUSTOM_REQUIRES_PREFIX}...   - spaced separated list of required dependencies (e.g. badge envinject)
 
 Plugin Categories:
- cap - is this a CAP plugin?
- 3rd - is this a 3rd party plugin?
- old - is this a deprecated plugin?
- cve - are there open security issues?
- bst - installed by default
- dep - installed as dependency
- src - used as a source plugin for this list
-"
+  cap - is this a CAP plugin?
+  3rd - is this a 3rd party plugin?
+  old - is this a deprecated plugin?
+  bst - installed by default
+  dep - installed as dependency
+  src - used as a source plugin for this list
+${CHECK_CVES_STR}"
   HEADER="${PLUGIN_YAML_CUSTOM_HEADER:-"${DEFAULT_HEADER}"}"
 
   # yq v4.4x no longer adds a new line between header and doc

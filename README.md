@@ -23,7 +23,17 @@
 
 ## Intro
 
-Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (any tier), and it will:
+Simple usages:
+
+```sh
+./run.sh                            # looks for a plugins.yaml in the current directory
+
+./run.sh -f path/to/my/plugins.yaml # file passed explicitly
+
+./run.sh -p beer,artifactory        # adhoc comma separated list (creates a temporary plugins.yaml using the list)
+```
+
+Give this script a path to a `plugins.yaml` file in a bundle with all plugins you want installed (defaults to the `plugins.yaml` in the current directory), and it will:
 
 1. Generate the `plugin-catalog.yaml` file for you including all versions and transitive dependencies.
 2. Generate variations of the `plugins.yaml` file you originally specifed with any additional transitive dependencies.
@@ -64,13 +74,13 @@ Within the directory of your choice...
 ...use as one-shot container with:
 
 ```sh
-docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it ghcr.io/kyounger/casc-plugin-dependency-calculation bash
+docker run -v $(pwd):$(pwd) -w $(pwd) -e CASC_UID=$(id -u) -e CASC_GID=$(id -g) --rm -it ghcr.io/kyounger/casc-plugin-dependency-calculation cascdeps -h
 ```
 
 ...use as a long-lived container to stop and start with:
 
 ```sh
-docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) -d ghcr.io/kyounger/casc-plugin-dependency-calculation tail -f /dev/null
+docker run -v $(pwd):$(pwd) -w $(pwd) -e CASC_UID=$(id -u) -e CASC_GID=$(id -g) -d ghcr.io/kyounger/casc-plugin-dependency-calculation tail -f /dev/null
 
 ```
 
@@ -79,7 +89,7 @@ Whereby...
 ```mono
   -v $(pwd):$(pwd)         # mount your current directory
   -w $(pwd)                # use your current directory as the working directory
-  -u $(id -u):$(id -g)     # use your own user
+  -e CASC_UID=$(id -u) -e CASC_GID=$(id -g)     # use your own user
 ```
 
 ### Using locally
@@ -111,7 +121,7 @@ docker build -t casc-plugin-dependency-calculation:dev -f Containerfile .
 Then using it, for example, to run tests before pushing commits:
 
 ```sh
-docker run -v $(pwd):$(pwd) -w $(pwd) -u $(id -u):$(id -g) --rm -it casc-plugin-dependency-calculation:dev ./tests/run.sh simple
+docker run -v $(pwd):$(pwd) -w $(pwd) -e CASC_UID=$(id -u) -e CASC_GID=$(id -g) --rm -it casc-plugin-dependency-calculation:dev ./tests/run.sh simple
 ```
 
 ## NEW: Effective Bundle Management
