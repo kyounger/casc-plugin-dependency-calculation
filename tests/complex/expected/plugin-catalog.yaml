@@ -10,7 +10,7 @@ configurations:
       ansicolor:
         version: "1.0.2"
       artifactory:
-        version: "4.0.6"
+        version: "4.0.8"
       aws-java-sdk:
         version: "1.12.406-374.v4cdf53953691"
       aws-java-sdk-cloudformation:
@@ -54,9 +54,9 @@ configurations:
       gerrit-trigger:
         version: "2.39.0"
       h2-api:
-        version: "11.1.4.199-12.v9f4244395f7a_"
+        version: "11.1.4.199-30.v1c64e772f3a_c"
       hashicorp-vault-plugin:
-        version: "367.v8a_1ee1cccf3a"
+        version: "371.v884a_4dd60fb_6"
       ivy:
         version: "2.4"
       jersey2-api:
@@ -74,13 +74,13 @@ configurations:
       prometheus:
         version: "2.2.3"
       resource-disposer:
-        version: "0.23"
+        version: "0.24"
       robot:
-        version: "3.5.1"
+        version: "3.5.2"
       slack:
         version: "664.vc9a_90f8b_c24a_"
       swarm:
-        version: "3.44"
+        version: "3.47"
       throttle-concurrents:
         version: "2.13"
       uno-choice:
