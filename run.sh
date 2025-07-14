@@ -690,9 +690,9 @@ cat << EOF
     cat "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE#"${CURRENT_DIR}"/}"
 
   Utility functions to check dependencies of plugins (copy and paste into your shell):
-    pDeps() { local p=\$1; grep -E "(.* -> )*\$p(\$| )" "target/2.504.3.28227/mm/generated/deps-processed-tree-single.txt"; }
-    pDepsP() { local p=\$1; grep -oE "(.* -> )\$p(\$| )" "target/2.504.3.28227/mm/generated/deps-processed-tree-single.txt" | sort -u; }
-    pDeps3rd() { p="(\$(echo -n "\$(yq '.configurations[0].includePlugins|keys|.[]' "target/2.504.3.28227/mm/plugin-catalog.yaml")" | tr '\n' '|'))"; grep -oE "(.* -> )*\$p(\$| )" "target/2.504.3.28227/mm/generated/deps-processed-tree-single.txt" | sort -u; }
+    pDeps() { local p=\$1; grep -E "^(.* -> |)*\$p(\$| )" "target/${CI_VERSION}/${CI_TYPE}/generated/deps-processed-tree-single.txt"; }
+    pDepsP() { local p=\$1; grep -oE "^(.* -> |)\$p(\$| )" "target/${CI_VERSION}/${CI_TYPE}/generated/deps-processed-tree-single.txt" | sort -u; }
+    pDeps3rd() { p="(\$(echo -n "\$(yq '.configurations[0].includePlugins|keys|.[]' "target/${CI_VERSION}/${CI_TYPE}/plugin-catalog.yaml")" | tr '\n' '|'))"; grep -oE "^(.* -> |)*\$p(\$| )" "target/${CI_VERSION}/${CI_TYPE}/generated/deps-processed-tree-single.txt" | sort -u; }
 
   For more details on the dependencies of a plugin, run the utilities like this:
     # all dependencies
