@@ -1264,7 +1264,7 @@ ${CHECK_CVES_STR}"
         k=$k yq -i 'del(.plugins[] | select(.id == env(k)))' "${TARGET_PLUGINS_YAML_MINIMAL_GEN}"
       elif [ "$CATEGORY_SRC_ONLY_AUTO_TAG" -eq 1 ]; then
         # add the generation-only annotation
-        for f in "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_MINIMAL}" "${TARGET_PLUGINS_YAML_MINIMAL_GEN}"; do
+        for f in "${TARGET_PLUGINS_YAML}" "${TARGET_PLUGINS_YAML_MINIMAL}"; do
           k=$k yq -i 'with(.plugins[]|select(.id == env(k)); . | .id line_comment |= line_comment + " src")' "${f}"
         done
       fi
