@@ -14,4 +14,4 @@
 #   src - used as a source plugin for this list
 
 plugins:
-  - id: beer # 3rd src
+  - id: beer # 3rd

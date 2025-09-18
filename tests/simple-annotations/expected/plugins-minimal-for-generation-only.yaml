@@ -15,5 +15,5 @@
 
 plugins:
   # tag:custom:url=https://www.brewery.com/download/beer.jpi
-  - id: beer # 3rd src
-  - id: git-client # cap src
+  - id: beer # 3rd
+  - id: git-client # cap

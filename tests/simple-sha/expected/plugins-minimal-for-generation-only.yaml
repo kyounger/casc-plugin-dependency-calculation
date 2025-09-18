@@ -14,5 +14,5 @@
 #   src - used as a source plugin for this list
 
 plugins:
-  - id: beer # 3rd src
-  - id: git-client # cap src
+  - id: beer # 3rd
+  - id: git-client # cap
