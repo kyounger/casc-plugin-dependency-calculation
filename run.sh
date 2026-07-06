@@ -236,6 +236,41 @@ extractAndFormat() {
   $SEDCMD 's/.*\post(//' "${1}" | $SEDCMD 's/);\w*$//' | jq .
 }
 
+# curl only fails on HTTP error status codes, so a proxy/VPN/SSO gateway that
+# intercepts the request and returns an auth page with a '200 OK' slips through
+# undetected. Verify the payload is actually JSON (or CB's JSONP-wrapped
+# update-center format) before letting the rest of the pipeline consume it,
+# so we fail with an actionable message instead of a cryptic jq parse error.
+validateDownloadedJson() {
+  local -r file=$1
+  local -r url=$2
+  if jq empty "$file" &> /dev/null || $SEDCMD 's/.*\post(//' "$file" | $SEDCMD 's/);\w*$//' | jq empty &> /dev/null; then
+    return 0
+  fi
+  local -r snippet=$(head -c 300 "$file" 2> /dev/null | tr -d '\0')
+  die "NETWORK ISSUE (not a bug in this script): the response downloaded from '${url}' is not valid JSON (cached at '${file}').
+The download itself reported success (curl only fails on HTTP error status codes), but the content received was not the expected update-center file.
+This almost always means a proxy, VPN gateway, or SSO/captive-portal on YOUR network silently intercepted the request and returned a login/auth page instead of the real file.
+First bytes of the response received:
+---
+${snippet}
+---
+This needs to be resolved on your network side, e.g.:
+  - Ask your network/security team to exempt/allow '${url}' from SSO-intercepting proxy policies for automated/CI traffic.
+  - If this host must go through an internal mirror instead, point the script at it via the CB_UPDATE_CENTER environment variable.
+  - If a bad response from a previous network issue got cached, rerun with -R to force a fresh download once network access is fixed.
+
+Debug commands to confirm and inspect this yourself:
+  - Check the HTTP status code and any redirect chain (a redirect to a login domain is the usual giveaway):
+      curl -sSL -o /dev/null -w 'http_code=%{http_code} url_effective=%{url_effective}\n' '${url}'
+  - Show the response headers (look for redirects to an auth/SSO domain, or a Content-Type that isn't JSON):
+      curl -sSIL '${url}'
+  - Re-fetch and inspect the first bytes of the raw response body directly:
+      curl -sSL '${url}' | head -c 500
+  - Inspect what is currently cached on disk:
+      head -c 500 '${file}'"
+}
+
 downloadUpdateCenter() {
   local -r UC_FILE=$1
   local -r UC_DIR=$2
@@ -254,10 +289,12 @@ downloadUpdateCenter() {
 cacheUpdateCenter() {
   #download update-center.json file and cache it
   downloadUpdateCenter "$CB_UPDATE_CENTER_CACHE_FILE" "$CB_UPDATE_CENTER_CACHE_DIR" "$CB_UPDATE_CENTER_URL_WITH_VERSION" || true
+  validateDownloadedJson "$CB_UPDATE_CENTER_CACHE_FILE" "$CB_UPDATE_CENTER_URL_WITH_VERSION"
 
   [ "$CHECK_CVES" -eq 1 ] || return 0
   #download update-center.actual.json file and cache it
   if downloadUpdateCenter "$CB_UPDATE_CENTER_ACTUAL" "$CB_UPDATE_CENTER_ACTUAL_CACHE_DIR" "$JENKINS_UC_ACTUAL_URL"; then
+    validateDownloadedJson "$CB_UPDATE_CENTER_ACTUAL" "$JENKINS_UC_ACTUAL_URL"
     jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
     jq -r '.name' "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}" | sort -u > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}.txt"
     jq '.warnings[]|select(.type == "plugin")' "${CB_UPDATE_CENTER_ACTUAL}" > "${CB_UPDATE_CENTER_ACTUAL_WARNINGS}"
