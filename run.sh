@@ -30,6 +30,7 @@ export PLUGIN_CATALOG_DISPLAY_NAME_OFFLINE="${PLUGIN_CATALOG_DISPLAY_NAME} (offl
 PLUGIN_CATALOG_OFFLINE_EXEC_HOOK="${PLUGIN_CATALOG_OFFLINE_EXEC_HOOK:-}"
 PLUGIN_YAML_INCLUDE_HEADER="${PLUGIN_YAML_INCLUDE_HEADER:-1}"
 PLUGIN_YAML_COMMENTS_STYLE="${PLUGIN_YAML_COMMENTS_STYLE:-line}"
+PLUGIN_YAML_INCLUDE_URLS="${PLUGIN_YAML_INCLUDE_URLS:-0}"
 CURRENT_DIR=$(pwd)
 TARGET_BASE_DIR="${TARGET_BASE_DIR:="${CURRENT_DIR}/target"}"
 CACHE_BASE_DIR="${CACHE_BASE_DIR:="${CURRENT_DIR}/.cache"}"
@@ -89,6 +90,8 @@ Usage: ${0##*/} -v <CI_VERSION> [OPTIONS]
     -A          Use 'src' plugins as the source list when calculating dependencies.
     -s          Create a MINIMAL plugin list (auto-removing bootstrap and dependencies)
     -S          Enable CVE check against plugins (added to metadata)
+    -u          Include each plugin's download URL as metadata comment in the plugins.yaml
+                    (same as PLUGIN_YAML_INCLUDE_URLS=1)
 
     -R          Refresh the downloaded update center jsons (no-cache)
     -V          Verbose logging (for debugging purposes)
@@ -105,7 +108,7 @@ OPTIND=1
 # Resetting OPTIND is necessary if getopts was used previously in the script.
 # It is a good idea to make OPTIND local if you process options in a function.
 
-while getopts AiIhHv:xf:F:g:G:c:C:m:MNRp:sSt:VdD:e: opt; do
+while getopts AiIhHv:xf:F:g:G:c:C:m:MNRp:sSt:uVdD:e: opt; do
     case $opt in
         h)
             show_help
@@ -187,6 +190,9 @@ while getopts AiIhHv:xf:F:g:G:c:C:m:MNRp:sSt:VdD:e: opt; do
         S)
             CHECK_CVES=1
             ;;
+        u)
+            PLUGIN_YAML_INCLUDE_URLS=1
+            ;;
         *)
             show_help >&2
             exit 1
@@ -199,6 +205,13 @@ shift "$((OPTIND-1))"   # Discard the options and sentinel --
 CHECK_CVES_STR=""
 if [ "${CHECK_CVES}" -eq 1 ]; then
   CHECK_CVES_STR="  cve - are there open security issues?
+"
+fi
+
+# PLUGIN_YAML_INCLUDE_URLS adds a 'url' annotation documenting the download url per plugin
+PLUGIN_YAML_INCLUDE_URLS_STR=""
+if [ "${PLUGIN_YAML_INCLUDE_URLS}" -eq 1 ]; then
+  PLUGIN_YAML_INCLUDE_URLS_STR="  url - the plugin's download url (appended to the metadata comment)
 "
 fi
 
@@ -864,7 +877,7 @@ processDepTree() {
   local directPrefix="${2:-}"
   local parentPrefix="${3:-}"
   local depList=
-  depList=$($SEDCMD -n "s/^${p}:\(.*\)/\1/p" "$DEPS_FILES" | xargs)
+  depList=$($SEDCMD -n "s/^${p}:\(.*\)/\1/p" $DEPS_FILES | xargs)
   if [[ -n "${TARGET_PLUGIN_DEPS_PROCESSED_TREE_SINGLE_LINE_ARR_FINISHED[$p]-}" ]]; then
     debug "Already processed plugin '$p' ($directPrefix) ($parentPrefix) ($depList)"
     return 0
@@ -957,7 +970,7 @@ processDeps() {
         debug "${indent}Result - add third-party plugin: $p"
         TARGET_PLUGIN_DEPENDENCY_RESULTS_ARR["$p"]="$p"
       fi
-      for dep in $($SEDCMD -n "s/^${p}:\(.*\)/\1/p" "$DEPS_FILES" | xargs); do
+      for dep in $($SEDCMD -n "s/^${p}:\(.*\)/\1/p" $DEPS_FILES | xargs); do
         # record ALL non-top-level plugins as dependencies for the categorisation afterwards
         if ! isProcessedDepNonTopLevel "$dep"; then
           TARGET_PLUGIN_DEPS_PROCESSED_NON_TOP_LEVEL_ARR[$dep]="$dep"
@@ -1206,7 +1219,7 @@ Plugin Categories:
   bst - installed by default
   dep - installed as dependency
   src - used as a source plugin for this list
-${CHECK_CVES_STR}"
+${CHECK_CVES_STR}${PLUGIN_YAML_INCLUDE_URLS_STR}"
   HEADER="${PLUGIN_YAML_CUSTOM_HEADER:-"${DEFAULT_HEADER}"}"
 
   # yq v4.4x no longer adds a new line between header and doc
@@ -1237,6 +1250,10 @@ ${CHECK_CVES_STR}"
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
     elif [[ "$pStr" =~ bst ]]; then
       considerForPotentialRemoval="$considerForPotentialRemoval $p "
+    fi
+    if [ "${PLUGIN_YAML_INCLUDE_URLS}" -eq 1 ]; then
+      pluginUrl="${ANNOTATION_CUSTOM_URL_PREFIX_ARR[$p]:-${TARGET_UC_ONLINE_ALL_WITH_URL_ARR[$p]:-}}"
+      [ -z "$pluginUrl" ] || pStr="${pStr} url:${pluginUrl}"
     fi
     case "${PLUGIN_YAML_COMMENTS_STYLE}" in
       line)
